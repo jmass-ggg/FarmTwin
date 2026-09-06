@@ -70,7 +70,7 @@ def upgrade() -> None:
         CREATE OR REPLACE FUNCTION update_timestamp()
         RETURNS TRIGGER AS $$
         BEGIN
-            NEW.updated_at = CURRENT_TIMESTAMP AT TIME ZONE 'UTC';
+            NEW.updated_at = CURRENT_TIMESTAMP;
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
@@ -105,15 +105,15 @@ def upgrade() -> None:
         # Timestamps with database defaults
         sa.Column(
             'created_at',
-            sa.DateTime(),
+            sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         sa.Column(
             'updated_at',
-            sa.DateTime(),
+            sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         # Primary key
         sa.PrimaryKeyConstraint('id', name='pk_users'),
@@ -174,15 +174,15 @@ def upgrade() -> None:
         # Timestamps with database defaults
         sa.Column(
             'created_at',
-            sa.DateTime(),
+            sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         sa.Column(
             'updated_at',
-            sa.DateTime(),
+            sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         # Primary key
         sa.PrimaryKeyConstraint('id', name='pk_farms'),
@@ -261,9 +261,9 @@ def upgrade() -> None:
         # Creation timestamp (immutable records)
         sa.Column(
             'created_at',
-            sa.DateTime(),
+            sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         # Primary key
         sa.PrimaryKeyConstraint('id', name='pk_farm_geometry_revisions'),

@@ -48,7 +48,7 @@ from app.models.user import InstallationMetadata, InstallationMode, User
 # Test database configuration
 # These should point to a disposable test database
 TEST_DB_HOST = os.getenv("TEST_DB_HOST", "localhost")
-TEST_DB_PORT = os.getenv("TEST_DB_PORT", "5432")
+TEST_DB_PORT = os.getenv("TEST_DB_PORT", "5434")
 TEST_DB_USER = os.getenv("TEST_DB_USER", "farmtwin_test")
 TEST_DB_PASSWORD = os.getenv("TEST_DB_PASSWORD", "test_password")
 TEST_DB_NAME = os.getenv("TEST_DB_NAME", "farmtwin_test")
@@ -109,7 +109,9 @@ def clean_test_db() -> Generator[AsyncEngine, None, None]:
     # Clean the database before test (must be synchronous for Alembic)
     async def clean_db():
         async with engine.begin() as conn:
-            # Drop all tables if they exist
+            # Keep this reset aligned with every mapped table, including tables
+            # introduced by migrations after the original Phase 1 schema.
+            await conn.run_sync(Base.metadata.drop_all)
             await conn.execute(text("DROP TABLE IF EXISTS farm_geometry_revisions CASCADE"))
             await conn.execute(text("DROP TABLE IF EXISTS farms CASCADE"))
             await conn.execute(text("DROP TABLE IF EXISTS installation_metadata CASCADE"))
@@ -117,6 +119,17 @@ def clean_test_db() -> Generator[AsyncEngine, None, None]:
             await conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
             await conn.execute(text("DROP FUNCTION IF EXISTS update_timestamp() CASCADE"))
             await conn.execute(text("DROP TYPE IF EXISTS installationmode CASCADE"))
+            # The application migrations grant least-privilege access to this
+            # role. The disposable test cluster must model that prerequisite.
+            await conn.execute(text("""
+                DO $$
+                BEGIN
+                    CREATE ROLE farmtwin_runtime NOLOGIN;
+                EXCEPTION
+                    WHEN duplicate_object THEN NULL;
+                END
+                $$
+            """))
             await conn.commit()
     
     asyncio.run(clean_db())
@@ -426,6 +439,9 @@ async def test_timestamp_triggers_exist(migrated_test_db: AsyncEngine):
     expected_triggers = {
         ("update_users_timestamp", "users"),
         ("update_farms_timestamp", "farms"),
+        ("update_stations_timestamp", "stations"),
+        ("update_hourly_aggregates_timestamp", "hourly_aggregates"),
+        ("update_daily_aggregates_timestamp", "daily_aggregates"),
     }
     
     assert triggers == expected_triggers, (

@@ -33,10 +33,13 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.security import HTTPAuthorizationCredentials
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from jose import jwt
+from jose.utils import base64url_encode
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,42 +63,28 @@ from app.core.security import (
 from app.models.user import InstallationMetadata, InstallationMode, User
 
 
-# Test signing key (RSA 2048-bit for testing only)
-TEST_PRIVATE_KEY = """-----BEGIN RSA PRIVATE KEY-----
-MIIEowIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF0qHpfVVJAGRvunDlGQ7R3h1yqr9
-cv4zzJqFfTpKQhPqCAD7Snh0HYlcwMD8mHWgf8LqLpZJaVNLKyIRH3g0qpxqUXPO
-KBHSGMhzCn5wLjXmFDlEOF+rSYQtHvuqCKx4pRrmL8hGJqgCLmQChiGdP/O0YA9p
-m2pYHNHCNjQGc7vK7fOjJLdRPw8VqKVwA7B5OB2E+VnpzgO5qKQSvBB8cS8W0C5b
-y3YXgGVcBMJRqpVCLJ8iiH6V2qVb3OIIwhKMXfyOeLZWiRnGEaRLK6bQX7T+n3u6
-nKGpHWVXQ8tMFJHy9jfMY3fELKkGOc0c/wIDAQABAoIBAAS5J7GqNfF0lPqf5J6N
-p3iGmK7yR5qBTYdLxNJxLMQqNOHWGNNq8PxUqD5L/NQWV6bA2YBr9kBDZ1zVMHML
-U+xCRF7KkuPEzYTNLKh5qXwMlH0VR+OxvKxGqF+YwU9EqTmGQqVBqmkIp5p6H8vG
-2hNWhQN8b8kKqtqPxqZhXp7BN2P3bBN0KqVhNJQqXfDGKaLqVnXqHF8VbVLZJvqT
-C0DqZN5aLFqQy0CnGqFLkV9F8HqPqRGvHLqMNLQVtF0pRqWFqHZ8qN5L0bQqRqNQ
-q6KqFqVLZpNqF0L8pqKqVqFNbpqL5FqQbNpL0qF8VqRqNbpqLqFZN0pL5qQqFq0C
-gYEA8sVqLqQbNL0FqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLq
-FqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5
-qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqV
-qKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFq
-NbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qF
-qRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqK
-qLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qCgYEA3QqVqFqNbp
-L5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRp
-qVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLq
-FqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5
-qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqV
-qKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFq
-NbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qF
-qRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqK
-qLqFqNbpL5qFqRpqVqKqLqFqNbpL5qFqRpqVqKqLqFqNbpL5q
------END RSA PRIVATE KEY-----"""
+# Generate a real, process-local RSA fixture. Keeping the private key out of the
+# repository also prevents an invalid hand-written PEM from silently returning.
+_TEST_RSA_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+TEST_PRIVATE_KEY = _TEST_RSA_KEY.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+)
+_TEST_PUBLIC_NUMBERS = _TEST_RSA_KEY.public_key().public_numbers()
+
+
+def _jwk_integer(value: int) -> str:
+    """Encode an RSA public number using JWK base64url rules."""
+    raw = value.to_bytes((value.bit_length() + 7) // 8, "big")
+    return base64url_encode(raw).decode("ascii")
 
 TEST_PUBLIC_KEY = {
     "kty": "RSA",
     "use": "sig",
     "kid": "test-key-1",
-    "n": "0Z3VS5JJcds3xfn_ygWyF0qHpfVVJAGRvunDlGQ7R3h1yqr9cv4zzJqFfTpKQhPqCAD7Snh0HYlcwMD8mHWgf8LqLpZJaVNLKyIRH3g0qpxqUXPOKBHSGMhzCn5wLjXmFDlEOF-rSYQtHvuqCKx4pRrmL8hGJqgCLmQChiGdP_O0YA9pm2pYHNHCNjQGc7vK7fOjJLdRPw8VqKVwA7B5OB2E-VnpzgO5qKQSvBB8cS8W0C5by3YXgGVcBMJRqpVCLJ8iiH6V2qVb3OIIwhKMXfyOeLZWiRnGEaRLK6bQX7T-n3u6nKGpHWVXQ8tMFJHy9jfMY3fELKkGOc0c_w",
-    "e": "AQAB",
+    "n": _jwk_integer(_TEST_PUBLIC_NUMBERS.n),
+    "e": _jwk_integer(_TEST_PUBLIC_NUMBERS.e),
 }
 
 TEST_JWKS = {"keys": [TEST_PUBLIC_KEY]}
@@ -444,7 +433,10 @@ async def test_dependency_failure_never_creates_demo(oidc_settings, session_fact
 
 # ===== Property-Based Tests =====
 
-@settings(max_examples=100)
+@settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 @given(
     issuer=st.text(min_size=1, max_size=100),
     subject=st.text(min_size=1, max_size=100),
@@ -481,7 +473,10 @@ async def test_property_stable_identity_mapping(issuer: str, subject: str, oidc_
             pass
 
 
-@settings(max_examples=100)
+@settings(
+    max_examples=100,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 @given(
     token=st.text(min_size=1, max_size=500),
 )
@@ -512,7 +507,10 @@ async def test_property_invalid_tokens_rejected(token: str, oidc_settings, sessi
             pass
 
 
-@settings(max_examples=50)
+@settings(
+    max_examples=50,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 @given(
     issuer=st.text(min_size=1, max_size=100),
     subject=st.text(min_size=1, max_size=100),

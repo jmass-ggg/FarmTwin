@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from sqlalchemy import MetaData, text
+from sqlalchemy import DateTime, MetaData, text
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -62,8 +62,9 @@ UUIDPrimaryKey = Annotated[
 UTCTimestamp = Annotated[
     datetime,
     mapped_column(
+        DateTime(timezone=True),
         nullable=False,
-        server_default=text("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"),
+        server_default=text("CURRENT_TIMESTAMP"),
     ),
 ]
 

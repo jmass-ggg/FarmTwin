@@ -31,6 +31,7 @@ from app.core.config import Settings
 from app.core.database import EXPECTED_ALEMBIC_HEAD, check_readiness
 from app.core.lifecycle import ServiceLifecycleState
 from app.main import create_app
+from app.models import Base
 import app.main as main_module
 
 
@@ -411,6 +412,9 @@ async def test_committed_farm_remains_available_after_application_restart(monkey
     engine = create_async_engine(database_url, poolclass=NullPool)
     try:
         async with engine.begin() as connection:
+            # Reset every mapped table so newer migrations cannot leave schema
+            # objects behind when this lifecycle test runs in the full suite.
+            await connection.run_sync(Base.metadata.drop_all)
             for statement in (
                 "DROP TABLE IF EXISTS farm_geometry_revisions CASCADE",
                 "DROP TABLE IF EXISTS farms CASCADE",
@@ -421,6 +425,15 @@ async def test_committed_farm_remains_available_after_application_restart(monkey
                 "DROP TYPE IF EXISTS installationmode CASCADE",
             ):
                 await connection.execute(text(statement))
+            await connection.execute(text("""
+                DO $$
+                BEGIN
+                    CREATE ROLE farmtwin_runtime NOLOGIN;
+                EXCEPTION
+                    WHEN duplicate_object THEN NULL;
+                END
+                $$
+            """))
 
         monkeypatch.setenv("DATABASE_URL", database_url)
         alembic = AlembicConfig(str(backend_dir / "alembic.ini"))

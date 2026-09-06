@@ -171,6 +171,11 @@ def test_openapi_contains_only_phase_1_operations_and_common_errors(contract_app
         "/api/v1/me",
         "/api/v1/farms",
         "/api/v1/farms/{farm_id}",
+        # Phase 2 Conduit endpoints
+        "/api/v1/conduit/current",
+        "/api/v1/conduit/features",
+        "/api/v1/conduit/history",
+        "/api/v1/data-sources",
     }
     assert schema["info"]["version"] == "1.0.0"
     assert set(schema["paths"]) == expected_paths

@@ -208,12 +208,19 @@ async def _verify_oidc_token(
         # Get signing key
         signing_key = await _get_signing_key(kid, settings)
 
+        # Pydantic's HttpUrl serializes a host-only URL with a trailing slash,
+        # while OIDC issuer claims commonly omit it. Normalize only that
+        # synthetic root path; non-root issuer paths remain exact.
+        configured_issuer = str(settings.auth.issuer)
+        if settings.auth.issuer.path == "/":
+            configured_issuer = configured_issuer[:-1]
+
         # Verify token
         claims = jwt.decode(
             token,
             signing_key,
             algorithms=settings.auth.algorithms,
-            issuer=str(settings.auth.issuer),
+            issuer=configured_issuer,
             audience=settings.auth.audience,
             options={
                 "verify_signature": True,
@@ -225,9 +232,9 @@ async def _verify_oidc_token(
                 "require_exp": True,
                 "require_iat": False,
                 "require_nbf": False,
+                # python-jose accepts clock skew in the options mapping.
+                "leeway": 30,
             },
-            # 30 second clock skew allowance
-            leeway=30,
         )
 
         # Validate required claims

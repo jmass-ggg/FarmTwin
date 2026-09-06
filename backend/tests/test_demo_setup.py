@@ -215,19 +215,23 @@ def test_setup_demo_database_refuses_wrong_auth_mode():
     """Test that setup validates auth mode before attempting database connection"""
     # Use OIDC mode which is incompatible with demo
     settings = Settings(
+        _env_file=None,
         environment="development",
         data_mode="demonstration",
-        auth__mode="oidc",  # Wrong mode
-        auth__issuer="https://example.com",
-        auth__audience="farmtwin",
-        auth__jwks_url="https://example.com/.well-known/jwks.json",
-        auth__algorithms='["RS256"]',
-        demo__local_only=True,
-        demo__isolated_database=True,
-        database__host="localhost",
-        database__name="farmtwin_demo",
-        database__user="demo_user",
-        database__password="demo_pass",
+        auth={
+            "mode": "oidc",
+            "issuer": "https://example.com",
+            "audience": "farmtwin",
+            "jwks_url": "https://example.com/.well-known/jwks.json",
+            "algorithms": ["RS256"],
+        },
+        demo={"local_only": True, "isolated_database": True},
+        database={
+            "host": "localhost",
+            "name": "farmtwin_demo",
+            "user": "demo_user",
+            "password": "demo_pass",
+        },
     )
     
     # Should fail validation before attempting database connection
@@ -242,16 +246,12 @@ def test_setup_demo_database_refuses_wrong_environment():
     from pydantic import ValidationError
     with pytest.raises(ValidationError, match="LOCAL_DEMO requires ENVIRONMENT=development"):
         Settings(
+            _env_file=None,
             environment="production",  # Wrong environment
             data_mode="demonstration",
-            auth__mode="local_demo",
-            demo__local_only=True,
-            demo__isolated_database=True,
-            database__host="localhost",
-            database__name="farmtwin_demo",
-            database__user="demo_user",
-            database__password="demo_pass",
-            _env_file=None,  # Don't read from .env
+            auth={"mode": "local_demo"},
+            demo={"local_only": True, "isolated_database": True},
+            database={"host": "localhost", "name": "farmtwin_demo", "user": "demo_user", "password": "demo_pass"},
         )
 
 
@@ -261,16 +261,12 @@ def test_setup_demo_database_refuses_live_data_mode():
     from pydantic import ValidationError
     with pytest.raises(ValidationError, match="LOCAL_DEMO requires non-live DATA_MODE"):
         Settings(
+            _env_file=None,
             environment="development",
             data_mode="live",  # Wrong mode
-            auth__mode="local_demo",
-            demo__local_only=True,
-            demo__isolated_database=True,
-            database__host="localhost",
-            database__name="farmtwin_demo",
-            database__user="demo_user",
-            database__password="demo_pass",
-            _env_file=None,  # Don't read from .env
+            auth={"mode": "local_demo"},
+            demo={"local_only": True, "isolated_database": True},
+            database={"host": "localhost", "name": "farmtwin_demo", "user": "demo_user", "password": "demo_pass"},
         )
 
 
@@ -280,16 +276,12 @@ def test_setup_demo_database_requires_local_only():
     from pydantic import ValidationError
     with pytest.raises(ValidationError, match="LOCAL_DEMO requires DEMO__LOCAL_ONLY=true"):
         Settings(
+            _env_file=None,
             environment="development",
             data_mode="demonstration",
-            auth__mode="local_demo",
-            demo__local_only=False,  # Missing flag - validation should catch this
-            demo__isolated_database=True,
-            database__host="localhost",
-            database__name="farmtwin_demo",
-            database__user="demo_user",
-            database__password="demo_pass",
-            _env_file=None,  # Don't read from .env
+            auth={"mode": "local_demo"},
+            demo={"local_only": False, "isolated_database": True},
+            database={"host": "localhost", "name": "farmtwin_demo", "user": "demo_user", "password": "demo_pass"},
         )
 
 
@@ -299,16 +291,12 @@ def test_setup_demo_database_requires_isolated_database():
     from pydantic import ValidationError
     with pytest.raises(ValidationError, match="LOCAL_DEMO requires DEMO__ISOLATED_DATABASE=true"):
         Settings(
+            _env_file=None,
             environment="development",
             data_mode="demonstration",
-            auth__mode="local_demo",
-            demo__local_only=True,
-            demo__isolated_database=False,  # Missing flag - validation should catch this
-            database__host="localhost",
-            database__name="farmtwin_demo",
-            database__user="demo_user",
-            database__password="demo_pass",
-            _env_file=None,  # Don't read from .env
+            auth={"mode": "local_demo"},
+            demo={"local_only": True, "isolated_database": False},
+            database={"host": "localhost", "name": "farmtwin_demo", "user": "demo_user", "password": "demo_pass"},
         )
 
 
@@ -408,7 +396,7 @@ async def test_demo_responses_remain_non_live_after_restart():
     # Get test database URL
     database_url = os.getenv(
         "TEST_DATABASE_URL",
-        "postgresql+asyncpg://test_user:test_pass@localhost:5432/farmtwin_test"
+        "postgresql+asyncpg://farmtwin_test:test_password@localhost:5434/farmtwin_test"
     )
     
     # Create demo settings using the same pattern as the fixture
@@ -416,7 +404,7 @@ async def test_demo_responses_remain_non_live_after_restart():
         environment=Environment.DEVELOPMENT,
         data_mode=DataMode.DEMONSTRATION,
         auth={"mode": "local_demo"},
-        database={"host": "localhost", "port": 5432, "name": "farmtwin_test", "user": "test_user", "password": "test_pass"},
+        database={"host": "localhost", "port": 5434, "name": "farmtwin_test", "user": "farmtwin_test", "password": "test_password"},
         demo={"local_only": True, "isolated_database": True},
         cors={"origins": []},
     )

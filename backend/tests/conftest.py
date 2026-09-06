@@ -80,6 +80,17 @@ async def session_factory(
                 "installation_metadata RESTART IDENTITY CASCADE"
             )
         )
+        # Conduit pipeline tables (added in Phase 2)
+        try:
+            await connection.execute(
+                text(
+                    "TRUNCATE TABLE daily_aggregates, hourly_aggregates, "
+                    "normalized_observations, ingestion_runs, stations "
+                    "RESTART IDENTITY CASCADE"
+                )
+            )
+        except Exception:
+            pass  # Tables may not exist in all test environments
 
     try:
         yield factory
@@ -91,6 +102,17 @@ async def session_factory(
                     "installation_metadata RESTART IDENTITY CASCADE"
                 )
             )
+            # Conduit pipeline tables (added in Phase 2)
+            try:
+                await connection.execute(
+                    text(
+                        "TRUNCATE TABLE daily_aggregates, hourly_aggregates, "
+                        "normalized_observations, ingestion_runs, stations "
+                        "RESTART IDENTITY CASCADE"
+                    )
+                )
+            except Exception:
+                pass  # Tables may not exist in all test environments
         # pytest-asyncio gives each test a function-scoped loop. Disposing here
         # prevents pooled asyncpg connections from being reused by another loop.
         await engine.dispose()
