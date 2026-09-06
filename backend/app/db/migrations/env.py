@@ -32,7 +32,10 @@ config = context.config
 
 # Interpret the config file for Python logging unless we're in quiet mode
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Migration setup may run in the same process as lifecycle verification.
+    # Preserve the application's privacy-filtered loggers rather than silently
+    # disabling request diagnostics through fileConfig's legacy default.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Model metadata for 'autogenerate' support
 # Using Base.metadata which includes all registered models
