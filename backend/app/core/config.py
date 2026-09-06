@@ -49,11 +49,11 @@ class AuthMode(str, Enum):
 class DatabaseSettings(BaseModel):
     """Database connection and pool settings"""
 
-    host: str = "localhost"
+    host: str
     port: Annotated[int, Field(gt=0, le=65535)] = 5432
-    name: str = "farmtwin"
-    user: str = "user"
-    password: SecretStr = SecretStr("changeme")
+    name: str
+    user: str
+    password: SecretStr
     pool_size: Annotated[int, Field(gt=0)] = 5
     max_overflow: Annotated[int, Field(ge=0)] = 5
     pool_timeout_seconds: Annotated[float, Field(gt=0, le=1)] = 1.0
@@ -291,13 +291,6 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_https_in_non_dev(self) -> "Settings":
         """Require HTTPS for identity URLs outside development and validate auth completion"""
-        # First validate required database fields (Req 1.2)
-        # These have defaults only for pydantic-settings parsing, but must be explicitly set
-        if self.database.host == "localhost" and self.database.name == "farmtwin" and self.database.user == "user":
-            # Check if this looks like uninitialized defaults (all three match defaults)
-            # This is acceptable - the defaults are intentionally permissive for local dev
-            pass
-        
         # Validate that OIDC mode has all required fields (Req 1.7)
         if self.auth.mode == AuthMode.OIDC:
             if not self.auth.issuer:
@@ -369,7 +362,8 @@ class Settings(BaseSettings):
     def model_dump(self, **kwargs) -> dict[str, Any]:
         """Override to exclude secrets from dumps"""
         d = super().model_dump(**kwargs)
-        # Auth settings and database settings already handle their own secrets
+        # Replace the nested database dict with the sanitized version
+        d["database"] = self.database.model_dump(**kwargs)
         return d
 
     def __repr__(self) -> str:
