@@ -15,7 +15,14 @@ from .exceptions import error_response
 
 
 CORS_ALLOWED_METHODS = ("GET", "POST", "PATCH", "DELETE", "OPTIONS")
-CORS_ALLOWED_HEADERS = ("Authorization", "Content-Type", "X-Idempotency-Key")
+CORS_ALLOWED_HEADERS = (
+    "Authorization",
+    "Content-Type",
+    "Idempotency-Key",
+    # Kept for compatibility with the Phase 1 browser contract. New clients
+    # use the standards-shaped Idempotency-Key header.
+    "X-Idempotency-Key",
+)
 CORS_EXPOSED_HEADERS = (
     "X-Request-ID",
     "X-FarmTwin-Auth-Mode",

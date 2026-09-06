@@ -164,7 +164,7 @@ async def test_allowed_preflight_has_only_intended_methods_and_headers(browser_a
         for name in response.headers["Access-Control-Allow-Headers"].split(",")
     }
     assert {name.lower() for name in CORS_ALLOWED_HEADERS} <= allowed_headers
-    assert "idempotency-key" not in allowed_headers
+    assert "idempotency-key" in allowed_headers
     assert "x-user-id" not in allowed_headers
     assert response.headers["X-Request-ID"]
 

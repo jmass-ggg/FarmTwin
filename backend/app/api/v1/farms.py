@@ -1,16 +1,15 @@
 """
-Farm read endpoints.
+Farm persistence endpoints.
 
 Requirements: 5.1, 5.2, 7.5, 7.6, 7.7, 8.1, 8.2, 8.3, 8.6
 
-Phase 1 implements only GET operations for farms.
-POST/PATCH/DELETE operations belong to Phase 4.
+Phase 4 extends the ownership-scoped reads with create, edit and delete.
 """
 
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from geoalchemy2.shape import to_shape
 from pydantic import BaseModel, Field
 from shapely.geometry import mapping
@@ -25,8 +24,8 @@ from app.api.schemas import (
     persisted_datetime_to_utc,
 )
 from app.core.security import Principal
-from app.repositories.base import NotFoundError
 from app.services.farm import FarmService
+from app.api.v1.farm_schemas import FarmCreate, FarmUpdate
 
 router = APIRouter(prefix="/farms", tags=["Farms"])
 
@@ -115,6 +114,51 @@ def _geometry_to_geojson(wkb_element) -> dict:
     return mapping(shape)
 
 
+def _farm_to_detail(farm) -> FarmDetailResponse:
+    current_geo = farm.current_geometry
+    return FarmDetailResponse(
+        id=farm.id,
+        name=farm.name,
+        current_geometry_revision=farm.current_geometry_revision,
+        current_geometry=GeometryRevisionResponse(
+            id=current_geo.id,
+            revision=current_geo.revision,
+            geometry=_geometry_to_geojson(current_geo.geometry),
+            centroid=_geometry_to_geojson(current_geo.centroid),
+            label_point=_geometry_to_geojson(current_geo.label_point),
+            hectares=current_geo.hectares,
+            created_at=persisted_datetime_to_utc(current_geo.created_at),
+        ),
+        created_at=persisted_datetime_to_utc(farm.created_at),
+        updated_at=persisted_datetime_to_utc(farm.updated_at),
+    )
+
+
+@router.post(
+    "",
+    response_model=FarmDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+    summary="Create a farm",
+)
+async def create_farm(
+    data: FarmCreate,
+    response: Response,
+    idempotency_key: UUID | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        description="Client-generated UUID used to make retries safe",
+    ),
+    principal: Principal = Depends(get_current_principal),
+    farm_service: FarmService = Depends(get_farm_service),
+) -> FarmDetailResponse:
+    result = await farm_service.create_farm_request(data, idempotency_key)
+    response.headers["Location"] = f"/api/v1/farms/{result.farm.id}"
+    if not result.created:
+        response.status_code = status.HTTP_200_OK
+    return _farm_to_detail(result.farm)
+
+
 @router.get(
     "",
     response_model=FarmListResponse,
@@ -199,31 +243,37 @@ async def get_farm(
     
     This prevents cross-user existence disclosure.
     """
-    try:
-        # Get farm from service (includes ownership check)
-        farm = await farm_service.get_farm(farm_id)
+    farm = await farm_service.get_farm(farm_id)
+    return _farm_to_detail(farm)
 
-        # Convert current geometry to response
-        current_geo = farm.current_geometry
-        current_geometry_response = GeometryRevisionResponse(
-            id=current_geo.id,
-            revision=current_geo.revision,
-            geometry=_geometry_to_geojson(current_geo.geometry),
-            centroid=_geometry_to_geojson(current_geo.centroid),
-            label_point=_geometry_to_geojson(current_geo.label_point),
-            hectares=current_geo.hectares,
-            created_at=persisted_datetime_to_utc(current_geo.created_at),
-        )
 
-        return FarmDetailResponse(
-            id=farm.id,
-            name=farm.name,
-            current_geometry_revision=farm.current_geometry_revision,
-            current_geometry=current_geometry_response,
-            created_at=persisted_datetime_to_utc(farm.created_at),
-            updated_at=persisted_datetime_to_utc(farm.updated_at),
-        )
+@router.patch(
+    "/{farm_id}",
+    response_model=FarmDetailResponse,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    summary="Update a farm",
+)
+async def update_farm(
+    farm_id: UUID,
+    data: FarmUpdate,
+    principal: Principal = Depends(get_current_principal),
+    farm_service: FarmService = Depends(get_farm_service),
+) -> FarmDetailResponse:
+    farm = await farm_service.update_farm_request(farm_id, data)
+    return _farm_to_detail(farm)
 
-    except NotFoundError:
-        # Convert to HTTP 404 (handled by exception handler)
-        raise
+
+@router.delete(
+    "/{farm_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    summary="Delete a farm",
+)
+async def delete_farm(
+    farm_id: UUID,
+    principal: Principal = Depends(get_current_principal),
+    farm_service: FarmService = Depends(get_farm_service),
+) -> Response:
+    await farm_service.delete_farm(farm_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

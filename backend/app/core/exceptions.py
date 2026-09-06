@@ -74,6 +74,69 @@ class ConflictError(DomainException):
     public_message = "The request conflicts with current state"
 
 
+class FarmValidationError(DomainException):
+    """Authoritative farm validation failure with field-level context."""
+
+    status_code = 422
+    code = "VALIDATION_ERROR"
+    public_message = "Invalid farm data"
+
+    def __init__(self, field: str, detail_code: str, message: str) -> None:
+        super().__init__(
+            message,
+            details=[ErrorDetail(field=field, code=detail_code, message=message)],
+        )
+
+
+class IdempotencyConflict(ConflictError):
+    """An idempotency key was reused for a different create payload."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Idempotency key payload mismatch",
+            details=[
+                ErrorDetail(
+                    field="header.Idempotency-Key",
+                    code="IDEMPOTENCY_MISMATCH",
+                    message="This idempotency key was already used for a different farm",
+                )
+            ],
+        )
+
+
+class StaleRevisionError(ConflictError):
+    """A geometry write lost an optimistic-concurrency race."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Farm boundary was updated elsewhere",
+            details=[
+                ErrorDetail(
+                    field="body.expected_revision",
+                    code="STALE_REVISION",
+                    message="Reload the latest farm boundary before saving again",
+                )
+            ],
+        )
+
+
+class FarmDeleteConflict(ConflictError):
+    """Deletion is blocked by retained resources."""
+
+    def __init__(self, blocking_resources: list[str]) -> None:
+        resources = ", ".join(sorted(blocking_resources))
+        super().__init__(
+            "Farm has resources that prevent deletion",
+            details=[
+                ErrorDetail(
+                    field="farm",
+                    code="BLOCKING_RESOURCES",
+                    message=resources,
+                )
+            ],
+        )
+
+
 class AuthenticationError(ApplicationError):
     status_code = 401
     code = "AUTH_INVALID_TOKEN"

@@ -1,4 +1,4 @@
-"""Mandatory Phase 1 API and OpenAPI contract tests.
+"""Mandatory API and OpenAPI contract tests through Phase 4.
 
 Feature: backend-foundation
 Property 11: Versioned API contract
@@ -23,7 +23,12 @@ from app.api.dependencies import (
     get_request_session,
 )
 from app.core.config import Settings
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import (
+    IdempotencyConflict,
+    NotFoundError,
+    StaleRevisionError,
+)
+from app.services.farm_service import FarmCreationResult
 from app.core.security import Principal
 from app.main import create_app
 
@@ -76,6 +81,11 @@ class _FarmService:
     def __init__(self, farms):
         self.farms = farms
         self.list_call = None
+        self.create_call = None
+        self.update_call = None
+        self.delete_call = None
+        self.idempotency_match = False
+        self.write_error = None
 
     async def list_farms(self, *, limit, offset, sort_by):
         self.list_call = (limit, offset, sort_by)
@@ -85,6 +95,23 @@ class _FarmService:
         if farm_id != OWNED_FARM_ID:
             raise NotFoundError("not visible")
         return self.farms[0]
+
+    async def create_farm_request(self, data, idempotency_key):
+        if self.write_error:
+            raise self.write_error
+        self.create_call = (data, idempotency_key)
+        return FarmCreationResult(self.farms[0], not self.idempotency_match)
+
+    async def update_farm_request(self, farm_id, data):
+        if self.write_error:
+            raise self.write_error
+        self.update_call = (farm_id, data)
+        return self.farms[0]
+
+    async def delete_farm(self, farm_id):
+        if self.write_error:
+            raise self.write_error
+        self.delete_call = farm_id
 
 
 def _farm(farm_id: UUID, name: str, created_at: datetime):
@@ -163,7 +190,7 @@ async def _request(app, method: str, path: str, **kwargs):
         return await client.request(method, path, **kwargs)
 
 
-def test_openapi_contains_only_phase_1_operations_and_common_errors(contract_app):
+def test_openapi_documents_phase_4_operations_and_common_errors(contract_app):
     schema = contract_app.openapi()
     expected_paths = {
         "/health",
@@ -186,26 +213,35 @@ def test_openapi_contains_only_phase_1_operations_and_common_errors(contract_app
         "description": "JWT bearer token from identity provider",
     }
 
+    expected_operations = {
+        "/api/v1/farms": {"get", "post"},
+        "/api/v1/farms/{farm_id}": {"get", "patch", "delete"},
+    }
+    assert {"FarmCreate", "FarmUpdate", "FarmDetailResponse"} <= set(
+        schema["components"]["schemas"]
+    )
+
     for path, path_item in schema["paths"].items():
         operations = {
             name
             for name in path_item
             if name in {"get", "post", "put", "patch", "delete"}
         }
-        assert operations == {"get"}
-        operation = path_item["get"]
+        assert operations == expected_operations.get(path, {"get"})
         if path.startswith("/api/v1"):
-            assert operation["security"] == [{"BearerAuth": []}]
-            assert {"401", "403", "404", "422", "503"} <= set(
-                operation["responses"]
-            )
-            for status_code in ("401", "403", "404", "422", "503"):
-                content = operation["responses"][status_code]["content"]
-                assert content["application/json"]["schema"]["$ref"].endswith(
-                    "/ErrorResponse"
+            for operation_name in operations:
+                operation = path_item[operation_name]
+                assert operation["security"] == [{"BearerAuth": []}]
+                assert {"401", "403", "404", "422", "503"} <= set(
+                    operation["responses"]
                 )
+                for status_code in ("401", "403", "404", "422", "503"):
+                    content = operation["responses"][status_code]["content"]
+                    assert content["application/json"]["schema"]["$ref"].endswith(
+                        "/ErrorResponse"
+                    )
         else:
-            assert "security" not in operation
+            assert "security" not in path_item["get"]
 
 
 @pytest.mark.asyncio
@@ -217,6 +253,23 @@ async def test_missing_bearer_token_is_401_even_without_browser_origin():
 
     app.dependency_overrides[get_app_session_factory] = factory_override
     response = await _request(app, "GET", "/api/v1/me")
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTH_TOKEN_MISSING"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "json_body"),
+    [
+        ("POST", "/api/v1/farms", {"name": "Farm", "geometry": {}}),
+        ("PATCH", f"/api/v1/farms/{OWNED_FARM_ID}", {"name": "Farm"}),
+        ("DELETE", f"/api/v1/farms/{OWNED_FARM_ID}", None),
+    ],
+)
+async def test_farm_write_routes_require_authentication(method, path, json_body):
+    app = create_app(_settings(oidc=True))
+    app.state.session_factory = object()
+    response = await _request(app, method, path, json=json_body)
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "AUTH_TOKEN_MISSING"
 
@@ -263,6 +316,102 @@ async def test_owned_farm_includes_current_geometry_and_utc(contract_app):
     assert body["current_geometry"]["geometry"]["type"] == "Polygon"
     assert body["created_at"].endswith("Z")
     assert body["updated_at"] is None
+
+
+VALID_GEOMETRY = {
+    "type": "Polygon",
+    "coordinates": [[[36.8, -1.3], [36.81, -1.3], [36.81, -1.29], [36.8, -1.3]]],
+}
+
+
+@pytest.mark.asyncio
+async def test_create_farm_contract_status_location_idempotency_and_headers(contract_app):
+    key = uuid4()
+    response = await _request(
+        contract_app,
+        "POST",
+        "/api/v1/farms",
+        headers={"Idempotency-Key": str(key)},
+        json={"name": "Alpha", "geometry": VALID_GEOMETRY},
+    )
+    assert response.status_code == 201
+    assert response.headers["Location"] == f"/api/v1/farms/{OWNED_FARM_ID}"
+    assert response.headers["X-Request-ID"]
+    assert response.headers["X-FarmTwin-Data-Mode"] == "demonstration"
+    assert response.headers["X-FarmTwin-Auth-Mode"] == "local_demo"
+    assert contract_app.state.contract_service.create_call[1] == key
+
+    contract_app.state.contract_service.idempotency_match = True
+    repeated = await _request(
+        contract_app,
+        "POST",
+        "/api/v1/farms",
+        headers={"Idempotency-Key": str(key)},
+        json={"name": "Alpha", "geometry": VALID_GEOMETRY},
+    )
+    assert repeated.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_patch_delete_and_conflict_contracts(contract_app):
+    patched = await _request(
+        contract_app,
+        "PATCH",
+        f"/api/v1/farms/{OWNED_FARM_ID}",
+        json={"name": "Renamed"},
+    )
+    assert patched.status_code == 200
+    assert contract_app.state.contract_service.update_call[0] == OWNED_FARM_ID
+
+    contract_app.state.contract_service.write_error = StaleRevisionError()
+    stale = await _request(
+        contract_app,
+        "PATCH",
+        f"/api/v1/farms/{OWNED_FARM_ID}",
+        json={"geometry": VALID_GEOMETRY, "expected_revision": 1},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "CONFLICT"
+    assert stale.json()["error"]["details"][0]["code"] == "STALE_REVISION"
+
+    contract_app.state.contract_service.write_error = IdempotencyConflict()
+    conflict = await _request(
+        contract_app,
+        "POST",
+        "/api/v1/farms",
+        headers={"Idempotency-Key": str(uuid4())},
+        json={"name": "Alpha", "geometry": VALID_GEOMETRY},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["details"][0]["code"] == "IDEMPOTENCY_MISMATCH"
+
+    contract_app.state.contract_service.write_error = None
+    deleted = await _request(
+        contract_app, "DELETE", f"/api/v1/farms/{OWNED_FARM_ID}"
+    )
+    assert deleted.status_code == 204
+    assert deleted.content == b""
+
+
+@pytest.mark.asyncio
+async def test_write_validation_errors_have_field_details(contract_app):
+    invalid_name = await _request(
+        contract_app,
+        "POST",
+        "/api/v1/farms",
+        json={"name": "   ", "geometry": VALID_GEOMETRY},
+    )
+    assert invalid_name.status_code == 422
+    assert invalid_name.json()["error"]["details"][0]["field"] == "body.name"
+
+    invalid_update = await _request(
+        contract_app,
+        "PATCH",
+        f"/api/v1/farms/{OWNED_FARM_ID}",
+        json={"geometry": VALID_GEOMETRY},
+    )
+    assert invalid_update.status_code == 422
+    assert invalid_update.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio

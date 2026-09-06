@@ -116,7 +116,7 @@ def custom_openapi(app: FastAPI):
     openapi_schema = get_openapi(
         title="FarmTwin API",
         version="1.0.0",
-        description="FarmTwin backend API - Phase 1 foundation with protected farm reads",
+        description="FarmTwin backend API with persistent farm boundary workflows",
         routes=app.routes,
     )
 

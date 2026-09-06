@@ -11,6 +11,7 @@ spatial properties (area, centroid, label point).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from pyproj import Geod
 from shapely import from_geojson
@@ -118,6 +119,9 @@ def validate_polygon(
     # -----------------------------------------------------------------------
     # Step 1: type check (Requirement 3.1)
     # -----------------------------------------------------------------------
+    if not isinstance(geojson_geometry, dict):
+        return _fail(GEOMETRY_INVALID, "Geometry must be a GeoJSON object")
+
     geo_type = geojson_geometry.get("type")
     if geo_type != "Polygon":
         return _fail(
@@ -141,6 +145,15 @@ def validate_polygon(
         if not isinstance(pair, (list, tuple)) or len(pair) < 2:
             return _fail(GEOMETRY_INVALID, "Each coordinate must be [lon, lat]")
         lon, lat = pair[0], pair[1]
+        if (
+            isinstance(lon, bool)
+            or isinstance(lat, bool)
+            or not isinstance(lon, (int, float))
+            or not isinstance(lat, (int, float))
+            or not math.isfinite(float(lon))
+            or not math.isfinite(float(lat))
+        ):
+            return _fail(GEOMETRY_INVALID, "Coordinates must be finite numbers")
         if not (-180 <= lon <= 180):
             return _fail(
                 GEOMETRY_INVALID,
@@ -163,6 +176,15 @@ def validate_polygon(
             "minimum is 4 (3 distinct vertices + closure)",
         )
 
+    if exterior[0][:2] != exterior[-1][:2]:
+        return _fail(GEOMETRY_INVALID, "Polygon ring must be closed")
+
+    if len({(pair[0], pair[1]) for pair in exterior[:-1]}) < 3:
+        return _fail(
+            GEOMETRY_TOO_FEW_VERTICES,
+            "Polygon must contain at least 3 distinct vertices",
+        )
+
     # -----------------------------------------------------------------------
     # Step 4: Shapely topology (Requirement 3.4)
     # -----------------------------------------------------------------------
@@ -170,6 +192,20 @@ def validate_polygon(
         shapely_polygon: Polygon = Polygon(exterior)
     except Exception as exc:
         return _fail(GEOMETRY_TOPOLOGY_ERROR, f"Could not construct polygon: {exc}")
+
+    distinct = list(dict.fromkeys((pair[0], pair[1]) for pair in exterior[:-1]))
+    anchor_x, anchor_y = distinct[0]
+    vector_x = distinct[1][0] - anchor_x
+    vector_y = distinct[1][1] - anchor_y
+    is_collinear = all(
+        abs(vector_x * (y - anchor_y) - vector_y * (x - anchor_x)) < 1e-12
+        for x, y in distinct[2:]
+    )
+    if is_collinear:
+        return _fail(
+            GEOMETRY_DEGENERATE,
+            "Polygon is degenerate (all vertices are collinear or coincident)",
+        )
 
     if not shapely_polygon.is_valid:
         reason = explain_validity(shapely_polygon)

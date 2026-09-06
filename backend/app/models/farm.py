@@ -60,6 +60,13 @@ class Farm(Base, UUIDMixin, TimestampMixin):
     # Farm metadata
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    # A retry key is unique per owner when present. Different users may use
+    # the same client-generated UUID without sharing idempotency state.
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        nullable=True,
+    )
+
     # Current geometry revision - positive integer
     current_geometry_revision: Mapped[int] = mapped_column(
         Integer,
@@ -103,6 +110,13 @@ class Farm(Base, UUIDMixin, TimestampMixin):
         ),
         # Index for ownership queries
         Index("ix_farms_user_created", "user_id", "created_at", "id"),
+        Index(
+            "uq_farms_user_idempotency_key",
+            "user_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=idempotency_key.is_not(None),
+        ),
     )
 
 
@@ -142,7 +156,7 @@ class FarmGeometryRevision(Base, UUIDMixin, CreatedAtMixin):
     # Farm reference - non-null ownership
     farm_id: Mapped[uuid.UUID] = mapped_column(
         PostgresUUID(as_uuid=True),
-        ForeignKey("farms.id", ondelete="RESTRICT"),
+        ForeignKey("farms.id", ondelete="CASCADE"),
         nullable=False,
     )
 
