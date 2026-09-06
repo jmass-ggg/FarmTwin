@@ -380,3 +380,127 @@ async def test_complete_setup_is_idempotent(session: AsyncSession):
     )
     farm_count = result.scalar_one()
     assert farm_count == 2  # Original fixtures, not doubled
+
+
+@pytest.mark.asyncio
+async def test_demo_responses_remain_non_live_after_restart():
+    """
+    Test that demo responses and logs remain labeled non-live after restart.
+    
+    Requirements: 1.6, 4.3, 12.2, 14.3
+    
+    **Property: Demo isolation**
+    Feature: backend-foundation, Property 10: Honest data modes
+    
+    This test verifies:
+    - Demo responses include non_live header after restart
+    - Demo data mode headers remain consistent
+    - Historical fixture timestamps are preserved after restart
+    """
+    import os
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+    from httpx import AsyncClient, ASGITransport
+    
+    from app.main import create_app
+    from app.core.config import Settings, Environment, DataMode
+    
+    # Get test database URL
+    database_url = os.getenv(
+        "TEST_DATABASE_URL",
+        "postgresql+asyncpg://test_user:test_pass@localhost:5432/farmtwin_test"
+    )
+    
+    # Create demo settings using the same pattern as the fixture
+    demo_settings = Settings(
+        environment=Environment.DEVELOPMENT,
+        data_mode=DataMode.DEMONSTRATION,
+        auth={"mode": "local_demo"},
+        database={"host": "localhost", "port": 5432, "name": "farmtwin_test", "user": "test_user", "password": "test_pass"},
+        demo={"local_only": True, "isolated_database": True},
+        cors={"origins": []},
+    )
+    
+    # Create engine and run demo setup
+    engine = create_async_engine(database_url, poolclass=NullPool)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    
+    try:
+        # Setup demo database
+        async with session_factory() as session:
+            await initialize_demo_marker(session)
+            demo_user = await create_demo_user(session)
+            await seed_demo_farms(session, demo_user)
+        
+        # Create first app instance
+        app = create_app(demo_settings)
+        app.state.session_factory = session_factory
+        
+        # Make request to get farms
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response1 = await client.get("/api/v1/farms")
+        
+        assert response1.status_code == 200
+        farms1 = response1.json()
+        
+        # Verify non-live headers in first instance
+        assert response1.headers["X-FarmTwin-Data-Mode"] == "demonstration"
+        assert response1.headers["X-FarmTwin-Auth-Mode"] == "local_demo"
+        
+        # Verify farms have historical timestamps
+        assert len(farms1["items"]) > 0
+        for farm in farms1["items"]:
+            # Parse timestamp and verify it's the historical June 2025 timestamp
+            created_at = datetime.fromisoformat(farm["created_at"].replace("Z", "+00:00"))
+            assert created_at.year == 2025
+            assert created_at.month == 6
+        
+        # Verify health endpoint shows non_live
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            health1 = await client.get("/health")
+        assert health1.status_code == 200
+        assert health1.json()["non_live"] is True
+        
+        # Dispose engine (simulate restart)
+        await engine.dispose()
+        
+        # Create new engine and app instance (simulating restart)
+        restarted_engine = create_async_engine(database_url, poolclass=NullPool)
+        restarted_session_factory = async_sessionmaker(restarted_engine, expire_on_commit=False)
+        restarted_app = create_app(demo_settings)
+        restarted_app.state.session_factory = restarted_session_factory
+        
+        try:
+            # Make request to restarted app
+            async with AsyncClient(transport=ASGITransport(app=restarted_app), base_url="http://test") as client:
+                response2 = await client.get("/api/v1/farms")
+            
+            assert response2.status_code == 200
+            farms2 = response2.json()
+            
+            # Verify non-live headers still present after restart
+            assert response2.headers["X-FarmTwin-Data-Mode"] == "demonstration"
+            assert response2.headers["X-FarmTwin-Auth-Mode"] == "local_demo"
+            
+            # Verify historical timestamps are preserved after restart
+            assert len(farms2["items"]) > 0
+            for farm in farms2["items"]:
+                created_at = datetime.fromisoformat(farm["created_at"].replace("Z", "+00:00"))
+                assert created_at.year == 2025
+                assert created_at.month == 6
+            
+            # Verify same farms are returned
+            assert farms2["total"] == farms1["total"]
+            assert len(farms2["items"]) == len(farms1["items"])
+            
+            # Verify health endpoint still shows non_live after restart
+            async with AsyncClient(transport=ASGITransport(app=restarted_app), base_url="http://test") as client:
+                health2 = await client.get("/health")
+            assert health2.status_code == 200
+            assert health2.json()["non_live"] is True
+            
+        finally:
+            await restarted_engine.dispose()
+    
+    finally:
+        await engine.dispose()
