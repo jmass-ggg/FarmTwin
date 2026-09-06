@@ -1,0 +1,99 @@
+# FarmTwin Application - Phase 1 Local Development
+# This compose file runs the backend API and PostgreSQL/PostGIS database
+
+services:
+  # PostgreSQL with PostGIS extension
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: farmtwin-db
+    environment:
+      POSTGRES_DB: farmtwin
+      POSTGRES_USER: farmtwin_admin
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-admin_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-roles.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmtwin_admin -d farmtwin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Demo database - isolated for local-demo mode
+  db-demo:
+    image: postgis/postgis:16-3.4
+    container_name: farmtwin-db-demo
+    environment:
+      POSTGRES_DB: farmtwin_demo
+      POSTGRES_USER: farmtwin_admin
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-admin_dev_password}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_demo_data:/var/lib/postgresql/data
+      - ./backend/scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-roles.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmtwin_admin -d farmtwin_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - demo
+
+  # Test database - disposable for integration tests
+  db-test:
+    image: postgis/postgis:16-3.4
+    container_name: farmtwin-db-test
+    environment:
+      POSTGRES_DB: farmtwin_test
+      POSTGRES_USER: farmtwin_test
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmtwin_test -d farmtwin_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - test
+
+  # Backend API
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: farmtwin-api
+    env_file:
+      - ./backend/.env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./backend/alembic.ini:/app/alembic.ini:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-proxy-headers --timeout-graceful-shutdown 20
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+    name: farmtwin_postgres_data
+  postgres_demo_data:
+    name: farmtwin_postgres_demo_data
+  postgres_test_data:
+    name: farmtwin_postgres_test_data
+
+networks:
+  default:
+    name: farmtwin_network
