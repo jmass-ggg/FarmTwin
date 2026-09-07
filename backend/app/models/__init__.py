@@ -11,6 +11,7 @@ from .conduit import (
     Station,
 )
 from .farm import Farm, FarmGeometryRevision
+from .snapshot import AnalysisJob, AnalysisSnapshot, JobStatus
 from .user import InstallationMetadata, InstallationMode, User
 
 __all__ = [
@@ -31,4 +32,7 @@ __all__ = [
     "NormalizedObservation",
     "HourlyAggregate",
     "DailyAggregate",
+    "AnalysisJob",
+    "AnalysisSnapshot",
+    "JobStatus",
 ]
