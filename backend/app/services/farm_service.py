@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import uuid
 
 from geoalchemy2.shape import to_shape
@@ -17,11 +18,14 @@ from app.domain.geometry import ValidationResult, validate_polygon
 from app.repositories.farm import FarmRepository
 from app.services.base import BaseService
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class FarmCreationResult:
     farm: object
     created: bool
+    analysis_job_id: uuid.UUID | None = None
 
 
 def _validated_wkb(
@@ -50,9 +54,15 @@ def _validated_wkb(
 class FarmService(BaseService):
     """Request-scoped service bound to one verified internal owner UUID."""
 
-    def __init__(self, session: AsyncSession, owner_id: uuid.UUID):
+    def __init__(
+        self,
+        session: AsyncSession,
+        owner_id: uuid.UUID,
+        settings=None,
+    ):
         super().__init__(session)
         self.owner_id = owner_id
+        self.settings = settings
         self.repository = FarmRepository(session, owner_id)
 
     async def get_farm(self, farm_id: uuid.UUID):
@@ -72,6 +82,9 @@ class FarmService(BaseService):
         data: FarmCreate,
         idempotency_key: uuid.UUID | None = None,
     ) -> FarmCreationResult:
+        # Import here to avoid circular imports
+        from app.services.snapshot_service import enqueue_analysis_job
+
         async def operation() -> FarmCreationResult:
             if idempotency_key is not None:
                 existing = await self.repository.get_by_idempotency_key(
@@ -97,7 +110,26 @@ class FarmService(BaseService):
                 hectares=hectares,
                 idempotency_key=idempotency_key,
             )
-            return FarmCreationResult(farm, created=True)
+
+            # Enqueue analysis job for the new farm (Requirements 1.1, 1.2)
+            analysis_job_id: uuid.UUID | None = None
+            try:
+                job = await enqueue_analysis_job(
+                    farm_id=farm.id,
+                    geometry_revision=farm.current_geometry_revision,
+                    session=self.session,
+                    settings=self.settings,
+                )
+                analysis_job_id = job.id
+            except Exception as exc:
+                logger.warning(
+                    "Failed to enqueue analysis job for farm %s: %s. "
+                    "Farm is saved; job was not enqueued.",
+                    farm.id,
+                    exc,
+                )
+
+            return FarmCreationResult(farm, created=True, analysis_job_id=analysis_job_id)
 
         return await self.execute_write_transaction(operation, materialize=False)
 
@@ -126,6 +158,9 @@ class FarmService(BaseService):
     async def update_farm_request(
         self, farm_id: uuid.UUID, data: FarmUpdate
     ):
+        # Import here to avoid circular imports
+        from app.services.snapshot_service import enqueue_analysis_job
+
         spatial = _validated_wkb(data.geometry) if data.geometry is not None else None
 
         async def operation():
@@ -142,6 +177,24 @@ class FarmService(BaseService):
                 )
             if data.name is not None:
                 farm = await self.repository.update_name(farm_id, data.name)
+
+            # Enqueue analysis job when geometry was updated (Requirements 1.1, 1.2)
+            if spatial is not None and farm is not None:
+                try:
+                    await enqueue_analysis_job(
+                        farm_id=farm.id,
+                        geometry_revision=farm.current_geometry_revision,
+                        session=self.session,
+                        settings=self.settings,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to enqueue analysis job for farm %s after geometry update: %s. "
+                        "Farm is saved; job was not enqueued.",
+                        farm.id,
+                        exc,
+                    )
+
             return farm
 
         return await self.execute_write_transaction(operation, materialize=False)

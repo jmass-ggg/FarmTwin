@@ -88,6 +88,10 @@ class FarmDetailResponse(ReadBaseSchema, TimestampMixin):
     current_geometry: GeometryRevisionResponse = Field(
         description="Current saved geometry revision"
     )
+    analysis_job_id: UUID | None = Field(
+        default=None,
+        description="Analysis job ID enqueued for the latest geometry revision (Requirements 1.2)",
+    )
 
 
 class FarmListResponse(PaginatedResponse):
@@ -114,7 +118,7 @@ def _geometry_to_geojson(wkb_element) -> dict:
     return mapping(shape)
 
 
-def _farm_to_detail(farm) -> FarmDetailResponse:
+def _farm_to_detail(farm, analysis_job_id: UUID | None = None) -> FarmDetailResponse:
     current_geo = farm.current_geometry
     return FarmDetailResponse(
         id=farm.id,
@@ -131,6 +135,7 @@ def _farm_to_detail(farm) -> FarmDetailResponse:
         ),
         created_at=persisted_datetime_to_utc(farm.created_at),
         updated_at=persisted_datetime_to_utc(farm.updated_at),
+        analysis_job_id=analysis_job_id,
     )
 
 
@@ -156,7 +161,7 @@ async def create_farm(
     response.headers["Location"] = f"/api/v1/farms/{result.farm.id}"
     if not result.created:
         response.status_code = status.HTTP_200_OK
-    return _farm_to_detail(result.farm)
+    return _farm_to_detail(result.farm, analysis_job_id=result.analysis_job_id)
 
 
 @router.get(

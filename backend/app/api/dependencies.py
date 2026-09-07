@@ -63,6 +63,7 @@ async def get_current_principal(
 async def get_farm_service(
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_request_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> FarmService:
     """
     Create farm service for the authenticated principal.
@@ -76,4 +77,4 @@ async def get_farm_service(
     Services own transaction boundaries.
     Session is closed after request completes (not committed by dependency).
     """
-    return FarmService(session, principal.user_id)
+    return FarmService(session, principal.user_id, settings)
