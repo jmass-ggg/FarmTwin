@@ -37,17 +37,48 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
         echo=False,
     )
     
-    # Create all tables
+    # Drop all tables using CASCADE to handle circular FKs
+    # (e.g. analysis_jobs.snapshot_id ↔ analysis_snapshots.job_id)
+    # We cannot drop the schema because that removes PostGIS; instead drop
+    # application tables in dependency order.
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(
+            text("""
+                DO $$ DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (
+                        SELECT tablename FROM pg_tables
+                        WHERE schemaname = 'public'
+                        AND tablename NOT IN ('spatial_ref_sys')
+                    ) LOOP
+                        EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+                    END LOOP;
+                END $$;
+            """)
+        )
         await conn.run_sync(Base.metadata.create_all)
     await test_engine.dispose()
     
     yield test_engine
     
-    # Cleanup
+    # Cleanup — drop all application tables (leave PostGIS intact)
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(
+            text("""
+                DO $$ DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (
+                        SELECT tablename FROM pg_tables
+                        WHERE schemaname = 'public'
+                        AND tablename NOT IN ('spatial_ref_sys')
+                    ) LOOP
+                        EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+                    END LOOP;
+                END $$;
+            """)
+        )
     
     await test_engine.dispose()
 
@@ -91,6 +122,16 @@ async def session_factory(
             )
         except Exception:
             pass  # Tables may not exist in all test environments
+        # Phase 5 snapshot tables
+        try:
+            await connection.execute(
+                text(
+                    "TRUNCATE TABLE analysis_snapshots, analysis_jobs "
+                    "RESTART IDENTITY CASCADE"
+                )
+            )
+        except Exception:
+            pass  # Tables may not exist in all test environments
 
     try:
         yield factory
@@ -108,6 +149,16 @@ async def session_factory(
                     text(
                         "TRUNCATE TABLE daily_aggregates, hourly_aggregates, "
                         "normalized_observations, ingestion_runs, stations "
+                        "RESTART IDENTITY CASCADE"
+                    )
+                )
+            except Exception:
+                pass  # Tables may not exist in all test environments
+            # Phase 5 snapshot tables
+            try:
+                await connection.execute(
+                    text(
+                        "TRUNCATE TABLE analysis_snapshots, analysis_jobs "
                         "RESTART IDENTITY CASCADE"
                     )
                 )

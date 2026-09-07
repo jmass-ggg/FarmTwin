@@ -1,8 +1,8 @@
-"""Mandatory API and OpenAPI contract tests through Phase 4.
+"""Mandatory API and OpenAPI contract tests through Phase 5.
 
-Feature: backend-foundation
+Feature: backend-foundation, environmental-twin
 Property 11: Versioned API contract
-Requirements: 7.1-7.7, 8.1-8.6, 14.3
+Requirements: 7.1-7.7, 8.1-8.6, 14.3, 10.1, 10.2, 10.3
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from app.core.exceptions import (
     NotFoundError,
     StaleRevisionError,
 )
+from app.models.snapshot import AnalysisJob, AnalysisSnapshot, JobStatus
 from app.services.farm_service import FarmCreationResult
 from app.core.security import Principal
 from app.main import create_app
@@ -190,7 +191,7 @@ async def _request(app, method: str, path: str, **kwargs):
         return await client.request(method, path, **kwargs)
 
 
-def test_openapi_documents_phase_4_operations_and_common_errors(contract_app):
+def test_openapi_documents_phase_5_operations_and_common_errors(contract_app):
     schema = contract_app.openapi()
     expected_paths = {
         "/health",
@@ -204,6 +205,10 @@ def test_openapi_documents_phase_4_operations_and_common_errors(contract_app):
         "/api/v1/conduit/features",
         "/api/v1/conduit/history",
         "/api/v1/data-sources",
+        # Phase 5 Digital Twin endpoints
+        "/api/v1/farms/{farm_id}/analysis-jobs",
+        "/api/v1/farms/{farm_id}/digital-twin",
+        "/api/v1/jobs/{job_id}",
     }
     assert schema["info"]["version"] == "1.0.0"
     assert set(schema["paths"]) == expected_paths
@@ -218,6 +223,7 @@ def test_openapi_documents_phase_4_operations_and_common_errors(contract_app):
         "/api/v1/farms": {"get", "post"},
         "/api/v1/farms/{farm_id}": {"get", "patch", "delete"},
         "/api/v1/farms/{farm_id}/decision-support": {"post"},
+        "/api/v1/farms/{farm_id}/analysis-jobs": {"post"},
     }
     assert {"FarmCreate", "FarmUpdate", "FarmDetailResponse"} <= set(
         schema["components"]["schemas"]
@@ -467,3 +473,324 @@ async def test_malformed_uuid_and_unsupported_version_use_common_errors(contract
     assert malformed.json()["error"]["details"][0]["field"] == "path.farm_id"
     assert unsupported.status_code == 404
     assert unsupported.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 twin contract tests
+# ---------------------------------------------------------------------------
+
+
+class _ScalarResult:
+    """Mimics SQLAlchemy ScalarResult for single-row returns."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+    def scalar_one(self):
+        if self._value is None:
+            raise Exception("No row found")
+        return self._value
+
+
+class _TwinSession:
+    """Minimal async session stub for twin route queries.
+
+    Intercepts execute() calls and returns pre-configured responses based
+    on the model being queried.  The session stub is set up per test through
+    the `farm`, `snapshot`, and `job` attributes.
+    """
+
+    def __init__(self, farm=None, snapshot=None, job=None):
+        self._farm = farm          # returned for Farm queries
+        self._snapshot = snapshot  # returned for AnalysisSnapshot queries
+        self._job = job            # returned for AnalysisJob queries
+        self._added = []
+
+    async def execute(self, statement):
+        # Inspect the statement's entity to decide what to return.
+        # SQLAlchemy select() exposes froms or column_descriptions.
+        entity = _get_statement_entity(statement)
+        if entity is AnalysisSnapshot:
+            return _ScalarResult(self._snapshot)
+        if entity is AnalysisJob:
+            return _ScalarResult(self._job)
+        # Default: Farm query
+        return _ScalarResult(self._farm)
+
+    def add(self, obj):
+        self._added.append(obj)
+        # Assign a stable UUID so the route can read job.id
+        if isinstance(obj, AnalysisJob) and obj.id is None:
+            obj.id = uuid4()
+
+    async def flush(self):
+        pass
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
+
+    async def close(self):
+        pass
+
+
+def _get_statement_entity(statement):
+    """Extract the primary ORM entity from a SQLAlchemy select() statement."""
+    try:
+        # Works for simple select(Model) statements
+        cols = statement.column_descriptions
+        if cols:
+            return cols[0]["entity"]
+    except Exception:
+        pass
+    return None
+
+
+def _make_farm(farm_id: UUID, user_id: UUID, revision: int = 1) -> object:
+    """Build a minimal Farm stub."""
+    return SimpleNamespace(
+        id=farm_id,
+        user_id=user_id,
+        name="Test Farm",
+        current_geometry_revision=revision,
+    )
+
+
+def _make_job(
+    job_id: UUID,
+    farm_id: UUID,
+    status: JobStatus = JobStatus.QUEUED,
+    snapshot_id: UUID | None = None,
+) -> object:
+    """Build a minimal AnalysisJob stub."""
+    return SimpleNamespace(
+        id=job_id,
+        farm_id=farm_id,
+        geometry_revision=1,
+        status=status,
+        stages={"weather": {"status": "queued"}, "satellite": {"status": "queued"}},
+        error_message=None,
+        snapshot_id=snapshot_id,
+        created_at=datetime(2026, 9, 8, 12, 0, 0, tzinfo=UTC),
+    )
+
+
+def _make_snapshot(
+    snapshot_id: UUID,
+    farm_id: UUID,
+    job_id: UUID,
+) -> object:
+    """Build a minimal AnalysisSnapshot stub with provenance-complete weather."""
+    weather_payload = {
+        "temperature_2m": {
+            "value": 24.3,
+            "unit": "celsius",
+            "source": "open-meteo",
+            "acquired_at": "2026-09-08T06:00:00Z",
+            "retrieved_at": "2026-09-08T09:14:33Z",
+            "data_mode": "live",
+            "quality": "accepted",
+            "resolution_m": 11000,
+        }
+    }
+    return SimpleNamespace(
+        id=snapshot_id,
+        farm_id=farm_id,
+        geometry_revision=1,
+        job_id=job_id,
+        valid_time_utc=datetime(2026, 9, 8, 12, 0, 0, tzinfo=UTC),
+        data_mode="live",
+        evidence_statuses={"weather": "accepted", "satellite": "unavailable"},
+        model_version="farmtwin-twin-v1",
+        weather=weather_payload,
+        climate_baseline=None,
+        satellite=None,
+        soil=None,
+        terrain=None,
+        conduit=None,
+        created_at=datetime(2026, 9, 8, 12, 0, 0, tzinfo=UTC),
+    )
+
+
+def _make_twin_app(*, farm=None, snapshot=None, job=None):
+    """Create a test app with twin session and principal overrides."""
+    app = create_app(_settings())
+    principal = Principal(
+        user_id=USER_ID,
+        issuer="https://issuer.example",
+        subject="subject-1",
+        permissions=frozenset(),
+    )
+    twin_session = _TwinSession(farm=farm, snapshot=snapshot, job=job)
+
+    async def principal_override():
+        return principal
+
+    async def session_override():
+        yield twin_session
+
+    app.dependency_overrides[get_current_principal] = principal_override
+    app.dependency_overrides[get_request_session] = session_override
+    return app
+
+
+@pytest.mark.asyncio
+async def test_post_analysis_jobs_returns_202_and_location():
+    """POST analysis-jobs → 202 Accepted + Location header.
+
+    Requirements: 10.2
+    """
+    farm_id = OWNED_FARM_ID
+    farm = _make_farm(farm_id, USER_ID)
+    app = _make_twin_app(farm=farm)
+
+    response = await _request(app, "POST", f"/api/v1/farms/{farm_id}/analysis-jobs")
+
+    assert response.status_code == 202
+    assert "Location" in response.headers
+    location = response.headers["Location"]
+    assert location.startswith("/api/v1/jobs/")
+    # The job ID in the Location header must be a valid UUID
+    job_id_str = location.removeprefix("/api/v1/jobs/")
+    UUID(job_id_str)  # raises if not valid UUID
+
+
+@pytest.mark.asyncio
+async def test_get_digital_twin_unavailable_when_no_snapshot_or_job():
+    """GET digital-twin with no snapshot and no job → {status: "unavailable"}.
+
+    Requirements: 10.1
+    """
+    farm_id = OWNED_FARM_ID
+    farm = _make_farm(farm_id, USER_ID)
+    # No snapshot, no pending job
+    app = _make_twin_app(farm=farm, snapshot=None, job=None)
+
+    response = await _request(app, "GET", f"/api/v1/farms/{farm_id}/digital-twin")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "unavailable"
+    assert body.get("job_id") is None
+    assert body.get("snapshot_id") is None
+
+
+@pytest.mark.asyncio
+async def test_get_digital_twin_pending_when_job_running():
+    """GET digital-twin with a queued job but no snapshot → {status: "pending", job_id: ...}.
+
+    Requirements: 10.1
+    """
+    farm_id = OWNED_FARM_ID
+    job_id = uuid4()
+    farm = _make_farm(farm_id, USER_ID)
+    job = _make_job(job_id, farm_id, status=JobStatus.QUEUED)
+    # No snapshot yet
+    app = _make_twin_app(farm=farm, snapshot=None, job=job)
+
+    response = await _request(app, "GET", f"/api/v1/farms/{farm_id}/digital-twin")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["job_id"] == str(job_id)
+
+
+@pytest.mark.asyncio
+async def test_get_digital_twin_ready_with_full_provenance():
+    """GET digital-twin with completed snapshot → status "ready" with provenance.
+
+    Requirements: 10.1, 10.4, 7.4
+    """
+    farm_id = OWNED_FARM_ID
+    job_id = uuid4()
+    snapshot_id = uuid4()
+    farm = _make_farm(farm_id, USER_ID)
+    snapshot = _make_snapshot(snapshot_id, farm_id, job_id)
+    app = _make_twin_app(farm=farm, snapshot=snapshot)
+
+    response = await _request(app, "GET", f"/api/v1/farms/{farm_id}/digital-twin")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["snapshot_id"] == str(snapshot_id)
+    assert body["farm_id"] == str(farm_id)
+    assert body["geometry_revision"] == 1
+    assert body["data_mode"] == "live"
+    assert body["model_version"] == "farmtwin-twin-v1"
+    assert body["valid_time"] is not None
+    # Evidence statuses must be present
+    assert body["evidence_statuses"] == {"weather": "accepted", "satellite": "unavailable"}
+    # Weather payload with provenance fields
+    assert body["weather"]["temperature_2m"]["value"] == 24.3
+    assert body["weather"]["temperature_2m"]["source"] == "open-meteo"
+    assert body["weather"]["temperature_2m"]["data_mode"] == "live"
+    assert body["weather"]["temperature_2m"]["quality"] == "accepted"
+    assert body["weather"]["temperature_2m"]["acquired_at"] is not None
+    assert body["weather"]["temperature_2m"]["retrieved_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_get_digital_twin_wrong_owner_returns_404():
+    """GET digital-twin for a farm not owned by the user → 404, same as non-existent.
+
+    Requirements: 10.3
+    """
+    # Other user's farm — session returns no farm (ownership check fails)
+    app = _make_twin_app(farm=None)
+
+    # Wrong-owner farm: session returns nothing (as if invisible)
+    invisible_response = await _request(
+        app, "GET", f"/api/v1/farms/{INVISIBLE_FARM_ID}/digital-twin"
+    )
+    # Absent farm: same app, same session behaviour
+    absent_response = await _request(
+        app, "GET", f"/api/v1/farms/{ABSENT_FARM_ID}/digital-twin"
+    )
+
+    assert invisible_response.status_code == absent_response.status_code == 404
+    for r in (invisible_response, absent_response):
+        error = r.json()["error"]
+        assert error["code"] == "RESOURCE_NOT_FOUND"
+        assert error["message"] == "Resource not found"
+        assert error["details"] == []
+
+
+@pytest.mark.asyncio
+async def test_post_analysis_jobs_wrong_owner_returns_404():
+    """POST analysis-jobs for a farm not owned by the user → 404.
+
+    Requirements: 10.3
+    """
+    app = _make_twin_app(farm=None)
+
+    response = await _request(
+        app, "POST", f"/api/v1/farms/{INVISIBLE_FARM_ID}/analysis-jobs"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_digital_twin_response_includes_standard_headers():
+    """GET digital-twin returns standard X-Request-ID and data-mode headers.
+
+    Requirements: 10.1
+    """
+    farm_id = OWNED_FARM_ID
+    farm = _make_farm(farm_id, USER_ID)
+    app = _make_twin_app(farm=farm, snapshot=None, job=None)
+
+    response = await _request(app, "GET", f"/api/v1/farms/{farm_id}/digital-twin")
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Request-ID")
+    assert response.headers.get("X-FarmTwin-Data-Mode") == "demonstration"
+    assert response.headers.get("X-FarmTwin-Auth-Mode") == "local_demo"

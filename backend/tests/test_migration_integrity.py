@@ -109,13 +109,22 @@ def clean_test_db() -> Generator[AsyncEngine, None, None]:
     # Clean the database before test (must be synchronous for Alembic)
     async def clean_db():
         async with engine.begin() as conn:
-            # Keep this reset aligned with every mapped table, including tables
-            # introduced by migrations after the original Phase 1 schema.
-            await conn.run_sync(Base.metadata.drop_all)
-            await conn.execute(text("DROP TABLE IF EXISTS farm_geometry_revisions CASCADE"))
-            await conn.execute(text("DROP TABLE IF EXISTS farms CASCADE"))
-            await conn.execute(text("DROP TABLE IF EXISTS installation_metadata CASCADE"))
-            await conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
+            # Drop all application tables with CASCADE to handle circular FKs
+            # (e.g. analysis_jobs.snapshot_id -> analysis_snapshots).
+            # Base.metadata.drop_all cannot handle this dependency cycle.
+            await conn.execute(text("""
+                DO $outer$ DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (
+                        SELECT tablename FROM pg_tables
+                        WHERE schemaname = 'public'
+                        AND tablename NOT IN ('spatial_ref_sys')
+                    ) LOOP
+                        EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
+                    END LOOP;
+                END $outer$;
+            """))
             await conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
             await conn.execute(text("DROP FUNCTION IF EXISTS update_timestamp() CASCADE"))
             await conn.execute(text("DROP TYPE IF EXISTS installationmode CASCADE"))
@@ -442,6 +451,8 @@ async def test_timestamp_triggers_exist(migrated_test_db: AsyncEngine):
         ("update_stations_timestamp", "stations"),
         ("update_hourly_aggregates_timestamp", "hourly_aggregates"),
         ("update_daily_aggregates_timestamp", "daily_aggregates"),
+        # Phase 5: analysis_jobs is mutable (status transitions)
+        ("update_analysis_jobs_timestamp", "analysis_jobs"),
     }
     
     assert triggers == expected_triggers, (

@@ -252,14 +252,14 @@ def upgrade() -> None:
     # analysis_snapshots: immutable — SELECT and INSERT only, no UPDATE
     op.execute(
         f"""
-        DO $
+        DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{RUNTIME_ROLE}') THEN
                 GRANT SELECT, INSERT, UPDATE ON analysis_jobs TO {RUNTIME_ROLE};
                 GRANT SELECT, INSERT ON analysis_snapshots TO {RUNTIME_ROLE};
             END IF;
         END
-        $;
+        $$;
         """
     )
 
