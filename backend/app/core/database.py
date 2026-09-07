@@ -18,7 +18,7 @@ from sqlalchemy import text
 from .config import Settings
 
 
-EXPECTED_ALEMBIC_HEAD = "0003_farm_idempotency"
+EXPECTED_ALEMBIC_HEAD = "0004_runtime_permissions"
 READINESS_OPERATION_SECONDS = 3.0
 READINESS_CLEANUP_SECONDS = 1.0
 

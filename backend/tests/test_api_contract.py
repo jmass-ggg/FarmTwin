@@ -198,6 +198,7 @@ def test_openapi_documents_phase_4_operations_and_common_errors(contract_app):
         "/api/v1/me",
         "/api/v1/farms",
         "/api/v1/farms/{farm_id}",
+        "/api/v1/farms/{farm_id}/decision-support",
         # Phase 2 Conduit endpoints
         "/api/v1/conduit/current",
         "/api/v1/conduit/features",
@@ -216,6 +217,7 @@ def test_openapi_documents_phase_4_operations_and_common_errors(contract_app):
     expected_operations = {
         "/api/v1/farms": {"get", "post"},
         "/api/v1/farms/{farm_id}": {"get", "patch", "delete"},
+        "/api/v1/farms/{farm_id}/decision-support": {"post"},
     }
     assert {"FarmCreate", "FarmUpdate", "FarmDetailResponse"} <= set(
         schema["components"]["schemas"]
@@ -242,6 +244,34 @@ def test_openapi_documents_phase_4_operations_and_common_errors(contract_app):
                     )
         else:
             assert "security" not in path_item["get"]
+
+
+@pytest.mark.asyncio
+async def test_decision_support_route_returns_planner_risks_and_scenario(contract_app):
+    response = await _request(
+        contract_app,
+        "POST",
+        f"/api/v1/farms/{OWNED_FARM_ID}/decision-support",
+        json={
+            "selected_month": 4,
+            "rainfall_change_pct": -25,
+            "temperature_change_c": 2,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["farm_id"] == str(OWNED_FARM_ID)
+    assert body["selected_month"]["month"] == "April"
+    assert len(body["months"]) == 12
+    assert len(body["selected_month"]["recommendations"]) == 3
+    assert {risk["slug"] for risk in body["risks"]} == {
+        "drought",
+        "heavy-rain",
+        "heat",
+    }
+    assert next(risk for risk in body["risks"] if risk["slug"] == "heavy-rain")[
+        "level"
+    ] == "Unknown"
 
 
 @pytest.mark.asyncio
