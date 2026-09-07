@@ -20,6 +20,9 @@ geoalchemy2==0.15.2
 # Authentication & Security
 python-jose[cryptography]==3.3.0
 
+# Redis (async job queue for worker process)
+redis==5.2.1
+
 # Testing
 pytest==8.3.3
 pytest-asyncio==0.24.0

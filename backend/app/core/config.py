@@ -273,6 +273,9 @@ class Settings(BaseSettings):
     cors: Annotated[CORSSettings, Field(default_factory=lambda: CORSSettings())]
     proxy: Annotated[ProxySettings, Field(default_factory=lambda: ProxySettings())]
 
+    # Redis URL for the analysis job queue (worker process)
+    redis_url: str = "redis://localhost:6379"
+
     # Logging
     log_level: str = "INFO"
 

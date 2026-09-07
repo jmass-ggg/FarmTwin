@@ -94,7 +94,7 @@ async def _publish_to_redis(job_id: uuid.UUID, settings: Settings) -> None:
     try:
         import redis.asyncio as aioredis  # type: ignore[import-untyped]
 
-        redis_url = getattr(settings, "redis_url", None) or "redis://localhost:6379"
+        redis_url = settings.redis_url
         async with aioredis.from_url(redis_url) as client:
             payload = json.dumps({"job_id": str(job_id)})
             await client.rpush(REDIS_JOB_QUEUE_KEY, payload)
