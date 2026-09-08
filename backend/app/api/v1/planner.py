@@ -266,6 +266,35 @@ async def accept_change_proposal(
     return _entry_to_response(entry)
 
 
+@router.post(
+    "/farms/{farm_id}/crop-plan/proposals/{proposal_id}/dismiss",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse, "description": "Farm/proposal not found or wrong owner"},
+    },
+    summary="Dismiss a change proposal",
+    description=(
+        "Marks a pending Change_Proposal as dismissed, leaving the linked "
+        "Plan_Entry unchanged. Requirements: 4.4"
+    ),
+)
+async def dismiss_change_proposal(
+    farm_id: UUID,
+    proposal_id: UUID,
+    principal: Principal = Depends(get_current_principal),
+    session: AsyncSession = Depends(get_request_session),
+) -> Response:
+    await planner_service.dismiss_proposal(
+        session=session,
+        principal=principal,
+        farm_id=farm_id,
+        proposal_id=proposal_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get(
     "/farms/{farm_id}/crop-plan/export",
     response_model=PlanExportResponse,

@@ -241,6 +241,12 @@ def test_openapi_documents_phase_5_operations_and_common_errors(contract_app):
         # Phase 7 Risk Center
         "/api/v1/farms/{farm_id}/risks": {"get"},
         "/api/v1/farms/{farm_id}/actions/{action_id}": {"patch"},
+        # Phase 8 Annual Planner
+        "/api/v1/farms/{farm_id}/crop-plan": {"get"},
+        "/api/v1/farms/{farm_id}/crop-plan/entries": {"post"},
+        "/api/v1/farms/{farm_id}/crop-plan/entries/{entry_id}": {"patch", "delete"},
+        "/api/v1/farms/{farm_id}/crop-plan/proposals/{proposal_id}/accept": {"post"},
+        "/api/v1/farms/{farm_id}/crop-plan/export": {"get"},
     }
     assert {"FarmCreate", "FarmUpdate", "FarmDetailResponse"} <= set(
         schema["components"]["schemas"]

@@ -659,6 +659,66 @@
   .risk-columns { grid-template-columns: 1fr; }
 }
 
+/* Annual Planner enhancements */
+
+/* Month grid saved badge (Task 5.1) */
+.month-grid-label-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; color: #07883d; font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.saved-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; background: #e2f7e9; color: #08763a; padding: 3px 7px; font-size: .65rem; font-weight: 720; letter-spacing: .04em; text-transform: none; }
+.saved-badge svg { width: 11px; height: 11px; }
+
+/* Planner header actions (Task 5.4 proposal bell) */
+.planner-header-actions { display: flex; align-items: center; gap: 12px; }
+.planner-proposal-trigger { position: relative; gap: 8px; border-color: #d4a520; background: #fffce8; color: #7a5b0a; }
+.planner-proposal-trigger:hover { background: #fff9d0; }
+.proposal-badge { display: grid; place-items: center; min-width: 20px; height: 20px; border-radius: 999px; background: #d4a520; color: #fff; padding: 0 4px; font-size: .7rem; font-weight: 800; }
+
+/* Add to plan button (Task 5.2) */
+.add-to-plan-btn { margin-top: 12px; width: 100%; gap: 6px; }
+.add-to-plan-btn svg { width: 14px; height: 14px; }
+
+/* Add-to-plan form (Task 5.2) */
+.planner-form { display: flex; flex-direction: column; gap: 14px; }
+.planner-form-field { display: flex; flex-direction: column; gap: 5px; }
+.planner-form-field label { color: #263a2e; font-size: .82rem; font-weight: 760; }
+.planner-form-field input[type=date],
+.planner-form-field input[type=number] { height: 38px; border: 1px solid #cddbd1; border-radius: 10px; background: #fff; padding: 0 10px; font-size: .88rem; outline: none; transition: border 150ms; }
+.planner-form-field input:focus { border-color: #07883d; box-shadow: 0 0 0 3px rgb(7 136 61 / 12%); }
+.planner-form-value { margin: 0; color: #1e3427; font-size: .92rem; font-weight: 650; }
+.planner-radio-group { display: flex; gap: 16px; }
+.planner-radio-group label { display: inline-flex; align-items: center; gap: 6px; color: #36503e; font-size: .88rem; cursor: pointer; }
+
+/* My Schedule panel (Task 5.3) */
+.schedule-panel { padding: 28px; }
+.schedule-heading { margin: 0; color: #1a3022; font-size: 1.2rem; letter-spacing: -.025em; }
+.schedule-list { display: flex; flex-direction: column; gap: 0; margin: 20px 0 0; padding: 0; list-style: none; }
+.schedule-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-top: 1px solid #e8eeea; }
+.schedule-row-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.schedule-row-main strong { color: #1e3427; font-size: .9rem; white-space: nowrap; }
+.schedule-dates { display: inline-flex; align-items: center; gap: 5px; color: #5e6f66; font-size: .78rem; }
+.schedule-dates svg { width: 14px; height: 14px; }
+.schedule-mode { border-radius: 999px; background: #f0f4f1; color: #607067; padding: 4px 8px; font-size: .72rem; font-weight: 700; white-space: nowrap; }
+.schedule-row-meta { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.schedule-area { color: #748178; font-size: .78rem; white-space: nowrap; }
+.schedule-score { color: #748178; font-size: .78rem; white-space: nowrap; }
+.schedule-score b { color: #07883d; }
+
+/* Change proposal dialog (Task 5.4) */
+.proposal-dialog-content { max-width: 480px !important; }
+.proposal-list { display: flex; flex-direction: column; gap: 14px; max-height: 420px; overflow-y: auto; }
+.proposal-item { border: 1px solid #dfe7e1; border-radius: 14px; padding: 16px; }
+.proposal-item-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.proposal-item-header strong { color: #1e3427; font-size: .92rem; }
+.proposal-delta { border-radius: 999px; padding: 4px 8px; font-size: .72rem; font-weight: 720; }
+.proposal-delta[data-direction=up] { background: #e2f7e9; color: #087339; }
+.proposal-delta[data-direction=down] { background: #ffeaea; color: #c93d3d; }
+.proposal-scores { display: flex; align-items: center; gap: 8px; color: #748178; font-size: .84rem; margin-bottom: 10px; }
+.proposal-scores b { color: #1e3427; font-weight: 700; }
+.proposal-changes { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 12px; }
+.proposal-changes div { display: flex; gap: 6px; font-size: .76rem; }
+.proposal-changes dt { color: #879289; min-width: 80px; }
+.proposal-changes dd { margin: 0; color: #35483c; }
+.proposal-item-actions { display: flex; gap: 8px; }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

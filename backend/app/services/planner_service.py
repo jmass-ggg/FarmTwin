@@ -441,6 +441,37 @@ async def delete_entry(
     await session.commit()
 
 
+async def dismiss_proposal(
+    session: AsyncSession,
+    principal: Principal,
+    farm_id: UUID,
+    proposal_id: UUID,
+) -> None:
+    """
+    Dismiss a Change_Proposal: mark it as dismissed, leaving the linked
+    PlanEntry unchanged.
+
+    Requirements: 4.4
+    """
+    farm = await _fetch_farm(session, principal, farm_id)
+
+    result = await session.execute(
+        select(ChangeProposal).where(
+            ChangeProposal.id == proposal_id,
+            ChangeProposal.farm_id == farm.id,
+            ChangeProposal.status == ProposalStatus.PENDING,
+        )
+    )
+    proposal = result.scalar_one_or_none()
+    if proposal is None:
+        raise NotFoundError(f"Change proposal {proposal_id} not found or not pending")
+
+    proposal.status = ProposalStatus.DISMISSED
+
+    await session.flush()
+    await session.commit()
+
+
 async def accept_proposal(
     session: AsyncSession,
     principal: Principal,
