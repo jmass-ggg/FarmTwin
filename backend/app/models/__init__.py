@@ -12,6 +12,7 @@ from .conduit import (
     Station,
 )
 from .farm import Farm, FarmGeometryRevision
+from .plan import ChangeProposal, PlanEntry, ProposalStatus
 from .snapshot import AnalysisJob, AnalysisSnapshot, JobStatus
 from .user import InstallationMetadata, InstallationMode, User
 
@@ -37,4 +38,7 @@ __all__ = [
     "AnalysisSnapshot",
     "JobStatus",
     "ActionCompletion",
+    "PlanEntry",
+    "ChangeProposal",
+    "ProposalStatus",
 ]
