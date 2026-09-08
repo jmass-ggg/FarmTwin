@@ -215,6 +215,12 @@ def test_openapi_documents_phase_5_operations_and_common_errors(contract_app):
         # Phase 7 Risk Center endpoints
         "/api/v1/farms/{farm_id}/risks",
         "/api/v1/farms/{farm_id}/actions/{action_id}",
+        # Phase 8 Annual Planner endpoints
+        "/api/v1/farms/{farm_id}/crop-plan",
+        "/api/v1/farms/{farm_id}/crop-plan/entries",
+        "/api/v1/farms/{farm_id}/crop-plan/entries/{entry_id}",
+        "/api/v1/farms/{farm_id}/crop-plan/proposals/{proposal_id}/accept",
+        "/api/v1/farms/{farm_id}/crop-plan/export",
     }
     assert schema["info"]["version"] == "1.0.0"
     assert set(schema["paths"]) == expected_paths

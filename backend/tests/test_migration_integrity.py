@@ -453,6 +453,8 @@ async def test_timestamp_triggers_exist(migrated_test_db: AsyncEngine):
         ("update_daily_aggregates_timestamp", "daily_aggregates"),
         # Phase 5: analysis_jobs is mutable (status transitions)
         ("update_analysis_jobs_timestamp", "analysis_jobs"),
+        # Phase 8: plan_entries are mutable (dates/mode can be updated)
+        ("update_plan_entries_timestamp", "plan_entries"),
     }
     
     assert triggers == expected_triggers, (

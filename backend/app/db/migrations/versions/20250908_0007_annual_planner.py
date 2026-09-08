@@ -240,14 +240,14 @@ def upgrade() -> None:
     # Runtime role needs full CRUD on both.
     op.execute(
         f"""
-        DO $
+        DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{RUNTIME_ROLE}') THEN
                 GRANT SELECT, INSERT, UPDATE, DELETE ON plan_entries TO {RUNTIME_ROLE};
                 GRANT SELECT, INSERT, UPDATE, DELETE ON change_proposals TO {RUNTIME_ROLE};
             END IF;
         END
-        $;
+        $$;
         """
     )
 
