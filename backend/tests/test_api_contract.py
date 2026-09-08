@@ -209,6 +209,9 @@ def test_openapi_documents_phase_5_operations_and_common_errors(contract_app):
         "/api/v1/farms/{farm_id}/analysis-jobs",
         "/api/v1/farms/{farm_id}/digital-twin",
         "/api/v1/jobs/{job_id}",
+        # Phase 6 Crop Simulator endpoints
+        "/api/v1/crops",
+        "/api/v1/farms/{farm_id}/simulate-crop",
     }
     assert schema["info"]["version"] == "1.0.0"
     assert set(schema["paths"]) == expected_paths
@@ -224,6 +227,8 @@ def test_openapi_documents_phase_5_operations_and_common_errors(contract_app):
         "/api/v1/farms/{farm_id}": {"get", "patch", "delete"},
         "/api/v1/farms/{farm_id}/decision-support": {"post"},
         "/api/v1/farms/{farm_id}/analysis-jobs": {"post"},
+        # Phase 6 Crop Simulator
+        "/api/v1/farms/{farm_id}/simulate-crop": {"post"},
     }
     assert {"FarmCreate", "FarmUpdate", "FarmDetailResponse"} <= set(
         schema["components"]["schemas"]
