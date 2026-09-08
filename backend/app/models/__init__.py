@@ -1,5 +1,6 @@
 """SQLAlchemy database models"""
 
+from .actions import ActionCompletion
 from .base import Base, CreatedAtMixin, OwnershipMixin, TimestampMixin, UUIDMixin
 from .conduit import (
     DailyAggregate,
@@ -35,4 +36,5 @@ __all__ = [
     "AnalysisJob",
     "AnalysisSnapshot",
     "JobStatus",
+    "ActionCompletion",
 ]

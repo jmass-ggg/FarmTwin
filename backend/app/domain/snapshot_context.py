@@ -73,6 +73,22 @@ class SnapshotContext:
     real_input_fields: frozenset[str]
     demonstration_input_fields: frozenset[str]
 
+    # ---------------------------------------------------------------------------
+    # Risk engine fields (Phase 7) — optional, default None for back-compat
+    # ---------------------------------------------------------------------------
+
+    # 7-day cumulative rainfall (mm) for heavy rainfall / flood assessments
+    rain_7d_mm: float | None = None
+
+    # Maximum wind speed (m/s) for wind hazard assessment
+    wind_max_ms: float | None = None
+
+    # Terrain slope (%) derived from mean_slope_deg (degrees → percent)
+    slope_pct: float | None = None
+
+    # Seasonal climate baseline rainfall (mm) for drought ratio calculation
+    climate_baseline_rainfall_mm: float | None = None
+
 
 # ---------------------------------------------------------------------------
 # Helper: safely extract a numeric value from a provenance envelope
