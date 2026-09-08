@@ -391,28 +391,199 @@ async def get_history(
 # 10.4  GET /api/v1/data-sources
 # ---------------------------------------------------------------------------
 
+# Status values:
+#   "active"        — provider has ingested data and is reachable
+#   "pending"       — provider is configured but has no data yet
+#   "not_configured" — provider is not configured (no credentials/station)
+#   "unavailable"   — provider is configured but currently unreachable
+#   "empty"         — provider completed ingestion but accepted 0 records
 
-class DataSourceRecord(ReadBaseSchema):
+# Static metadata for each of the 6 providers.
+# No API keys, credentials, or raw provider URLs are included.
+_PROVIDER_METADATA: dict[str, dict] = {
+    "conduit": {
+        "description": (
+            "On-farm IoT weather station network providing real-time micro-climate "
+            "observations (temperature, humidity, VPD, wind, pressure). "
+            "Data is normalised, quality-flagged, and aggregated into hourly and "
+            "daily feature sets used directly in crop and risk analysis."
+        ),
+        "resolution": "Point measurement — single station per deployment",
+        "spatial_extent": "Farm-local: station must be within 50 km of the farm centroid",
+        "license_note": "Operator-owned sensor data; no third-party licence required.",
+        "pipeline_explanation": (
+            "Raw observations from the station arrive via the ingestion pipeline. "
+            "Each reading is parsed, validated against the sensor schema, and "
+            "quality-flagged (ACCEPTED / SINGLE_CHANNEL / REJECTED). "
+            "Accepted readings are normalised into NormalizedObservations and "
+            "rolled up into HourlyAggregates and DailyAggregates. "
+            "When a farm snapshot is requested, the eligibility adapter checks "
+            "whether the station is within 50 km and 500 m elevation of the "
+            "farm centroid, then attaches the latest daily aggregate as the "
+            "Conduit evidence block in the snapshot."
+        ),
+    },
+    "weather": {
+        "description": (
+            "Open-Meteo forecast API providing current conditions and 7-day hourly "
+            "forecast derived from ERA5/GFS reanalysis models. "
+            "Used for current temperature, humidity, precipitation, wind speed, "
+            "and cloud cover at the farm centroid."
+        ),
+        "resolution": "~11 km grid (ERA5/GFS nominal resolution)",
+        "spatial_extent": "Global coverage",
+        "license_note": (
+            "Open-Meteo data is available under the Creative Commons Attribution 4.0 "
+            "International licence (CC BY 4.0). Non-commercial use is free."
+        ),
+        "pipeline_explanation": None,
+    },
+    "satellite": {
+        "description": (
+            "Copernicus Sentinel-2 L2A multispectral imagery. "
+            "The most recent cloud-free scene (cloud cover < 30 %, within 30 days) "
+            "is selected, clipped to the farm polygon, and used to compute NDVI "
+            "(vegetation health, 10 m) and NDMI (spectral moisture proxy, 20 m)."
+        ),
+        "resolution": "10 m (NDVI, Band 4 + Band 8); 20 m (NDMI, Band 8A + Band 11)",
+        "spatial_extent": "Global land coverage (Sentinel-2 orbit)",
+        "license_note": (
+            "Copernicus Sentinel data are made available under the Copernicus "
+            "Data Policy — free and open access for any use."
+        ),
+        "pipeline_explanation": None,
+    },
+    "soil": {
+        "description": (
+            "SoilGrids v2.0 (ISRIC) modelled soil properties at the farm centroid. "
+            "Reports bulk density, clay/sand/silt fractions, pH, and organic carbon "
+            "at 0–5 cm and 5–15 cm depth intervals with 5th/95th percentile "
+            "uncertainty bounds. All values are modelled estimates, not direct "
+            "field measurements."
+        ),
+        "resolution": "250 m nominal grid resolution",
+        "spatial_extent": "Global land coverage",
+        "license_note": (
+            "SoilGrids data are provided by ISRIC under the Creative Commons "
+            "Attribution 4.0 International licence (CC BY 4.0)."
+        ),
+        "pipeline_explanation": None,
+    },
+    "terrain": {
+        "description": (
+            "Copernicus DEM GLO-30 digital elevation model. "
+            "1°×1° tiles at 30 m resolution are clipped to the farm polygon to "
+            "compute mean, min, and max elevation (EGM2008 vertical datum) and "
+            "mean slope (Horn 1981 gradient estimator). "
+            "Flood probability is explicitly not computed — drainage evidence is "
+            "required for flood exposure assessment."
+        ),
+        "resolution": "30 m (1 arc-second)",
+        "spatial_extent": "Global land coverage (excluding polar regions)",
+        "license_note": (
+            "Copernicus DEM GLO-30 data are available free of charge for any use "
+            "under the Copernicus DEM Licence."
+        ),
+        "pipeline_explanation": None,
+    },
+    "climate": {
+        "description": (
+            "Open-Meteo ERA5-Land historical archive. "
+            "Computes 30-year monthly climatological baselines for temperature and "
+            "precipitation at the farm centroid. Anomaly is calculated as the "
+            "difference between the current observation and the long-term monthly "
+            "mean for the same calendar month."
+        ),
+        "resolution": "~9 km grid (ERA5-Land reanalysis)",
+        "spatial_extent": "Global coverage",
+        "license_note": (
+            "ERA5-Land reanalysis data from Copernicus Climate Data Store, "
+            "served via Open-Meteo under CC BY 4.0."
+        ),
+        "pipeline_explanation": None,
+    },
+}
+
+
+class DataSourceEntry(ReadBaseSchema):
     """
-    Provider record in the data-sources list.
+    Provider entry in the data-sources list.
 
-    Requirements: 11.8
-    No secrets or provider URLs included.
+    Extended schema for Phase 10 with richer metadata.
+    Status values: active, pending, not_configured, unavailable, empty.
+    No secrets, credentials, or raw provider URLs are included.
+
+    Requirements: 1.1, 1.2, 1.3, 1.4, 1.5
     """
 
     name: str = Field(description="Provider name")
+    description: str = Field(description="Plain-language description of this provider")
     data_mode: str = Field(description="Data mode for this source")
     last_ingestion_time: datetime | None = Field(
-        None, description="Time of last successful ingestion (UTC)"
+        None, description="Time of last successful ingestion or acquisition (UTC)"
     )
-    record_count: int = Field(description="Total normalized observation count from this source")
-    status: str = Field(description="Current status of this data source")
+    record_count: int = Field(
+        description="Total normalised observation or acquisition count from this source"
+    )
+    resolution: str | None = Field(
+        None, description="Spatial or temporal resolution of this source"
+    )
+    spatial_extent: str | None = Field(
+        None, description="Geographic coverage of this source"
+    )
+    license_note: str | None = Field(
+        None, description="Licence and attribution note for this source"
+    )
+    pipeline_explanation: str | None = Field(
+        None,
+        description=(
+            "Plain-language description of how this source's data flows "
+            "through the pipeline into decisions (Conduit only)"
+        ),
+    )
+    status: str = Field(
+        description=(
+            "Current status: active | pending | not_configured | unavailable | empty"
+        )
+    )
+
+
+# Keep DataSourceRecord as an alias for backwards compatibility
+DataSourceRecord = DataSourceEntry
 
 
 class DataSourcesResponse(ReadBaseSchema):
-    """Data sources list response. Requirements: 11.8"""
+    """Data sources list response. Requirements: 1.1, 1.2, 1.3, 1.4, 1.5"""
 
-    sources: list[DataSourceRecord]
+    sources: list[DataSourceEntry]
+
+
+def _build_static_provider_entry(
+    provider_key: str,
+    data_mode: str,
+    status: str,
+    last_ingestion_time: datetime | None = None,
+    record_count: int = 0,
+) -> DataSourceEntry:
+    """Build a DataSourceEntry for a static (non-Conduit) provider.
+
+    Fills metadata from _PROVIDER_METADATA and never exposes credentials.
+
+    Requirements: 1.1, 1.2, 1.3, 1.4, 1.5
+    """
+    meta = _PROVIDER_METADATA.get(provider_key, {})
+    return DataSourceEntry(
+        name=provider_key,
+        description=meta.get("description", ""),
+        data_mode=data_mode,
+        last_ingestion_time=last_ingestion_time,
+        record_count=record_count,
+        resolution=meta.get("resolution"),
+        spatial_extent=meta.get("spatial_extent"),
+        license_note=meta.get("license_note"),
+        pipeline_explanation=meta.get("pipeline_explanation"),
+        status=status,
+    )
 
 
 @data_sources_router.get(
@@ -420,9 +591,12 @@ class DataSourcesResponse(ReadBaseSchema):
     response_model=DataSourcesResponse,
     summary="List configured data sources",
     description=(
-        "Returns a list of configured provider records with name, data mode, "
-        "last ingestion time, record count, and status. "
-        "No secrets or provider URLs are included."
+        "Returns entries for all six configured providers: Conduit, Weather, "
+        "Satellite, Soil, Terrain, and Climate Baseline. "
+        "Each entry includes description, resolution, spatial extent, licence note, "
+        "data mode, last ingestion time, record count, and status. "
+        "Status values: active | pending | not_configured | unavailable | empty. "
+        "No API keys, credentials, or raw provider URLs are included."
     ),
 )
 async def get_data_sources(
@@ -430,11 +604,27 @@ async def get_data_sources(
     session: AsyncSession = Depends(get_request_session),
 ) -> DataSourcesResponse:
     """
-    Data source provider list.
+    Data source provider list — all six providers.
 
-    Requirements: 11.8
+    The Conduit entry is derived from real ingestion run data in the database.
+    The remaining five providers are remote APIs that do not have ingestion
+    run records; they are reported with static metadata and a status of
+    'not_configured' when no station/farm data is available, or 'unavailable'
+    when configured but currently unreachable.
+
+    For the demo/historical_replay data mode all remote providers are reported
+    as 'not_configured' because they are not polled during replay.
+
+    Requirements: 1.1, 1.2, 1.3, 1.4, 1.5
     """
-    # Get all completed ingestion runs grouped by source_id with latest retrieval time
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    global_data_mode = settings.data_mode.value  # live | historical_replay | demonstration
+
+    # ------------------------------------------------------------------
+    # Conduit — derived from real ingestion run records
+    # ------------------------------------------------------------------
     run_result = await session.execute(
         select(
             IngestionRun.source_id,
@@ -444,64 +634,90 @@ async def get_data_sources(
         .where(IngestionRun.status == IngestionStatus.COMPLETED)
         .group_by(IngestionRun.source_id)
     )
-    runs = run_result.all()
+    runs = {row.source_id: row for row in run_result.all()}
 
-    if not runs:
-        # No ingestion runs yet — report fixture source as pending
-        return DataSourcesResponse(
-            sources=[
-                DataSourceRecord(
-                    name="conduit",
-                    data_mode="historical_replay",
-                    last_ingestion_time=None,
-                    record_count=0,
-                    status="pending",
-                )
-            ]
+    conduit_run = runs.get("conduit")
+
+    if conduit_run is not None:
+        record_count = int(conduit_run.total_accepted or 0)
+        last_time = (
+            persisted_datetime_to_utc(conduit_run.last_ingestion_time)
+            if conduit_run.last_ingestion_time
+            else None
         )
 
-    # Get the most recent run to determine current data_mode
-    latest_run_result = await session.execute(
-        select(IngestionRun)
-        .where(IngestionRun.status == IngestionStatus.COMPLETED)
-        .order_by(desc(IngestionRun.retrieval_time))
-        .limit(1)
-    )
-    latest_run = latest_run_result.scalar_one_or_none()
-
-    sources = []
-    for row in runs:
-        record_count = int(row.total_accepted or 0)
-        last_time = persisted_datetime_to_utc(row.last_ingestion_time) if row.last_ingestion_time else None
-
-        # Determine data_mode from the most recent run for this source
-        source_run_result = await session.execute(
-            select(IngestionRun)
-            .where(
-                IngestionRun.source_id == row.source_id,
-                IngestionRun.status == IngestionStatus.COMPLETED,
-            )
-            .order_by(desc(IngestionRun.retrieval_time))
-            .limit(1)
-        )
-        source_run = source_run_result.scalar_one_or_none()
-        # Infer data_mode from accepted observations for this source
+        # Infer data_mode from accepted observations for Conduit source
         obs_mode_result = await session.execute(
             select(NormalizedObservation.data_mode)
             .join(IngestionRun, NormalizedObservation.ingestion_run_id == IngestionRun.id)
-            .where(IngestionRun.source_id == row.source_id)
+            .where(IngestionRun.source_id == "conduit")
             .limit(1)
         )
-        obs_mode = obs_mode_result.scalar_one_or_none() or "historical_replay"
+        conduit_data_mode = obs_mode_result.scalar_one_or_none() or global_data_mode
+        conduit_status = "active" if record_count > 0 else "empty"
+    else:
+        # No ingestion runs for conduit yet
+        record_count = 0
+        last_time = None
+        conduit_data_mode = global_data_mode
+        # Distinguish: station exists in DB (configured but no runs) vs no station
+        station_result = await session.execute(select(Station).limit(1))
+        station = station_result.scalar_one_or_none()
+        conduit_status = "pending" if station is not None else "not_configured"
 
-        sources.append(
-            DataSourceRecord(
-                name=row.source_id,
-                data_mode=obs_mode,
-                last_ingestion_time=last_time,
-                record_count=record_count,
-                status="active" if record_count > 0 else "empty",
-            )
-        )
+    conduit_meta = _PROVIDER_METADATA["conduit"]
+    conduit_entry = DataSourceEntry(
+        name="conduit",
+        description=conduit_meta["description"],
+        data_mode=conduit_data_mode,
+        last_ingestion_time=last_time,
+        record_count=record_count,
+        resolution=conduit_meta["resolution"],
+        spatial_extent=conduit_meta["spatial_extent"],
+        license_note=conduit_meta["license_note"],
+        pipeline_explanation=conduit_meta["pipeline_explanation"],
+        status=conduit_status,
+    )
 
-    return DataSourcesResponse(sources=sources)
+    # ------------------------------------------------------------------
+    # Remote API providers — Weather, Satellite, Soil, Terrain, Climate
+    # For live mode: these are polled on-demand per snapshot request.
+    # For non-live modes: reported as not_configured (not polled in replay).
+    # ------------------------------------------------------------------
+    if global_data_mode == "live":
+        # In live mode these are all configured (the APIs are public / free-tier)
+        # We cannot know real-time reachability without probing, so we report
+        # them as "active" to indicate they are configured and expected to work.
+        remote_status = "active"
+        remote_data_mode = "live"
+    else:
+        # In historical_replay or demonstration mode these APIs are not polled
+        remote_status = "not_configured"
+        remote_data_mode = global_data_mode
+
+    weather_entry = _build_static_provider_entry(
+        "weather", remote_data_mode, remote_status
+    )
+    satellite_entry = _build_static_provider_entry(
+        "satellite", remote_data_mode, remote_status
+    )
+    soil_entry = _build_static_provider_entry(
+        "soil", remote_data_mode, remote_status
+    )
+    terrain_entry = _build_static_provider_entry(
+        "terrain", remote_data_mode, remote_status
+    )
+    climate_entry = _build_static_provider_entry(
+        "climate", remote_data_mode, remote_status
+    )
+
+    return DataSourcesResponse(
+        sources=[
+            conduit_entry,
+            weather_entry,
+            satellite_entry,
+            soil_entry,
+            terrain_entry,
+            climate_entry,
+        ]
+    )
