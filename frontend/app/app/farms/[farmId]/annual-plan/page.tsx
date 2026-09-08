@@ -12,6 +12,7 @@ import {
   ThermometerSun,
   Trash2,
   TriangleAlert,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -35,6 +36,7 @@ import {
   acceptChangeProposal,
   createPlanEntry,
   deletePlanEntry,
+  dismissChangeProposal,
   getAnnualPlan,
   type PlanEntryCreate,
 } from '@/lib/api/planner';
@@ -279,6 +281,20 @@ function ProposalDialog({ farmId, proposals, entries, onAccepted }: ProposalDial
     },
   });
 
+  const dismissMutation = useMutation({
+    mutationFn: (proposalId: string) => dismissChangeProposal(farmId, proposalId),
+    onSuccess: () => {
+      toast.create({ title: 'Proposal dismissed', type: 'success' });
+      setOpen(false);
+      onAccepted();
+    },
+    onError: (err: Error) => {
+      toast.create({ title: 'Dismiss failed', description: err.message, type: 'error' });
+    },
+  });
+
+  const isBusy = acceptMutation.isPending || dismissMutation.isPending;
+
   const pendingProposals = proposals.filter((p) => p.status === 'pending');
   if (pendingProposals.length === 0) return null;
 
@@ -346,10 +362,20 @@ function ProposalDialog({ farmId, proposals, entries, onAccepted }: ProposalDial
                   <Button
                     size="sm"
                     onClick={() => acceptMutation.mutate(proposal.id)}
-                    disabled={acceptMutation.isPending}
+                    disabled={isBusy}
                   >
                     <CheckCircle />
                     Accept
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => dismissMutation.mutate(proposal.id)}
+                    disabled={isBusy}
+                    aria-label={`Reject proposal for ${entry?.crop_name ?? 'crop'}`}
+                  >
+                    <X />
+                    Reject
                   </Button>
                 </div>
               </div>
