@@ -594,30 +594,45 @@ def _resolve_actions(
         if hazard_level.lower() in rule.applicable_levels:
             active_rules.append(rule)
 
-    # Build a set of active rule IDs for conflict lookup
+    # Build a lookup of active rule IDs and their assessment indices
     active_ids = {r.id for r in active_rules}
+    index_map = {a.hazard: a.index for a in assessments}
 
-    # Remove conflicted rules (lower priority loses)
-    # Sort by priority so higher-priority rules (lower number) win
-    active_rules_sorted = sorted(active_rules, key=lambda r: r.priority)
+    # Remove conflicted rules.
+    # A rule listed in another active rule's conflict_with is a candidate for
+    # removal.  When both rules have identical priority (mutual conflict), the
+    # rule whose hazard has the higher current index is considered more urgent
+    # and wins — its conflict target is removed.  When priorities differ, the
+    # lower-priority (higher number) rule is always removed.
     removed_ids: set[str] = set()
+
+    # Process rules ordered by descending hazard index so the most severe
+    # assessment wins when priorities are equal.
+    active_rules_sorted = sorted(
+        active_rules,
+        key=lambda r: (-index_map.get(r.hazard, 0), r.priority),
+    )
 
     for rule in active_rules_sorted:
         if rule.id in removed_ids:
             continue
         for conflict_id in rule.conflict_with:
             if conflict_id in active_ids and conflict_id not in removed_ids:
-                # Find the conflicting rule to compare priorities
                 conflicting = next(
                     (r for r in active_rules if r.id == conflict_id), None
                 )
                 if conflicting is not None:
-                    # Remove the lower-priority (higher number) rule
-                    if rule.priority <= conflicting.priority:
+                    if rule.priority < conflicting.priority:
+                        # This rule has higher priority — remove the target
                         removed_ids.add(conflict_id)
-                    else:
+                    elif rule.priority > conflicting.priority:
+                        # This rule has lower priority — remove itself
                         removed_ids.add(rule.id)
                         break
+                    else:
+                        # Equal priority — the rule with the higher hazard index
+                        # wins (already sorted that way), so remove the target
+                        removed_ids.add(conflict_id)
 
     final_rules = [r for r in active_rules if r.id not in removed_ids]
 

@@ -132,6 +132,13 @@ async def session_factory(
             )
         except Exception:
             pass  # Tables may not exist in all test environments
+        # Phase 7 action completions table
+        try:
+            await connection.execute(
+                text("TRUNCATE TABLE action_completions RESTART IDENTITY CASCADE")
+            )
+        except Exception:
+            pass  # Tables may not exist in all test environments
 
     try:
         yield factory
@@ -161,6 +168,13 @@ async def session_factory(
                         "TRUNCATE TABLE analysis_snapshots, analysis_jobs "
                         "RESTART IDENTITY CASCADE"
                     )
+                )
+            except Exception:
+                pass  # Tables may not exist in all test environments
+            # Phase 7 action completions table
+            try:
+                await connection.execute(
+                    text("TRUNCATE TABLE action_completions RESTART IDENTITY CASCADE")
                 )
             except Exception:
                 pass  # Tables may not exist in all test environments
