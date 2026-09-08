@@ -220,7 +220,11 @@ def test_openapi_documents_phase_5_operations_and_common_errors(contract_app):
         "/api/v1/farms/{farm_id}/crop-plan/entries",
         "/api/v1/farms/{farm_id}/crop-plan/entries/{entry_id}",
         "/api/v1/farms/{farm_id}/crop-plan/proposals/{proposal_id}/accept",
+        "/api/v1/farms/{farm_id}/crop-plan/proposals/{proposal_id}/dismiss",
         "/api/v1/farms/{farm_id}/crop-plan/export",
+        # Phase 9 Scenario Explorer endpoints
+        "/api/v1/farms/{farm_id}/scenario",
+        "/api/v1/farms/{farm_id}/scenarios",
     }
     assert schema["info"]["version"] == "1.0.0"
     assert set(schema["paths"]) == expected_paths
@@ -246,7 +250,11 @@ def test_openapi_documents_phase_5_operations_and_common_errors(contract_app):
         "/api/v1/farms/{farm_id}/crop-plan/entries": {"post"},
         "/api/v1/farms/{farm_id}/crop-plan/entries/{entry_id}": {"patch", "delete"},
         "/api/v1/farms/{farm_id}/crop-plan/proposals/{proposal_id}/accept": {"post"},
+        "/api/v1/farms/{farm_id}/crop-plan/proposals/{proposal_id}/dismiss": {"post"},
         "/api/v1/farms/{farm_id}/crop-plan/export": {"get"},
+        # Phase 9 Scenario Explorer
+        "/api/v1/farms/{farm_id}/scenario": {"post"},
+        "/api/v1/farms/{farm_id}/scenarios": {"get"},
     }
     assert {"FarmCreate", "FarmUpdate", "FarmDetailResponse"} <= set(
         schema["components"]["schemas"]

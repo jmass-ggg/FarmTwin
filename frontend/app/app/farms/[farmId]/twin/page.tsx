@@ -17,6 +17,7 @@ import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibr
 import { ApiErrorState } from '@/components/api-state';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ClimateOverview } from '@/features/twin/ClimateOverview';
 import { EvidenceSection } from '@/features/twin/EvidenceSection';
 import { useApiResource } from '@/hooks/use-api-resource';
 import { farmTwinApi } from '@/lib/api/client';
@@ -504,6 +505,15 @@ export default function FarmTwinPage() {
               )}
             </div>
           </div>
+
+          {/* Climate Overview — four-tab view of snapshot climate sections */}
+          {!twinLoading && !twinError && twin?.status === 'ready' && (
+            <ClimateOverview
+              weather={twin.weather}
+              satellite={twin.satellite}
+              climateBaseline={twin.climate_baseline}
+            />
+          )}
 
           <div className="twin-footer-actions">
             <Button variant="outline" render={<Link href={`/app/farms/${farmId}/annual-plan`} />}>

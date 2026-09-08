@@ -11,7 +11,7 @@ from fastapi import APIRouter
 
 from app.api.schemas import ErrorResponse
 
-from . import profile, farms, conduit, decision_support, twin, crops, risks, planner
+from . import profile, farms, conduit, decision_support, twin, crops, risks, planner, scenarios
 
 COMMON_ERROR_RESPONSES = {
     401: {"model": ErrorResponse, "description": "Missing or invalid bearer token"},
@@ -38,3 +38,4 @@ router.include_router(twin.router)
 router.include_router(crops.router)
 router.include_router(risks.router)
 router.include_router(planner.router)
+router.include_router(scenarios.router)

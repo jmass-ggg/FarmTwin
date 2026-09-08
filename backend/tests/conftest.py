@@ -139,6 +139,13 @@ async def session_factory(
             )
         except Exception:
             pass  # Tables may not exist in all test environments
+        # Phase 9 saved scenarios table
+        try:
+            await connection.execute(
+                text("TRUNCATE TABLE saved_scenarios RESTART IDENTITY CASCADE")
+            )
+        except Exception:
+            pass  # Tables may not exist in all test environments
 
     try:
         yield factory
@@ -175,6 +182,13 @@ async def session_factory(
             try:
                 await connection.execute(
                     text("TRUNCATE TABLE action_completions RESTART IDENTITY CASCADE")
+                )
+            except Exception:
+                pass  # Tables may not exist in all test environments
+            # Phase 9 saved scenarios table
+            try:
+                await connection.execute(
+                    text("TRUNCATE TABLE saved_scenarios RESTART IDENTITY CASCADE")
                 )
             except Exception:
                 pass  # Tables may not exist in all test environments

@@ -719,6 +719,110 @@
 .proposal-changes dd { margin: 0; color: #35483c; }
 .proposal-item-actions { display: flex; gap: 8px; }
 
+/* Climate Overview (Task 5.1) */
+.climate-overview { padding: 28px; }
+.climate-overview-header { margin-bottom: 20px; }
+.climate-overview-header h2 { margin: 0; color: #1a3022; font-size: 1.2rem; letter-spacing: -.025em; }
+
+/* Climate tab list */
+.climate-tab-list { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #e0e8e2; padding-bottom: 0; }
+.climate-tab-button { min-height: 38px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: #607067; padding: 8px 14px; font-size: .83rem; font-weight: 650; cursor: pointer; transition: color 150ms, border-color 150ms; margin-bottom: -1px; }
+.climate-tab-button:hover { color: #07883d; }
+.climate-tab-button[data-active] { border-bottom-color: #07883d; color: #07883d; font-weight: 750; }
+
+/* Climate tab content */
+.climate-tab-content { min-height: 220px; }
+.climate-tab-content section { display: flex; flex-direction: column; gap: 14px; }
+
+/* Climate tab source note */
+.climate-tab-source-note { display: flex; align-items: center; gap: 8px; margin: 0; color: #5c6e64; font-size: .78rem; }
+.climate-tab-source-note svg { width: 16px; height: 16px; color: #07883d; flex-shrink: 0; }
+
+/* Climate metric list */
+.climate-metric-list { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
+.climate-metric-row { padding: 12px 0; border-top: 1px solid #edf1ee; }
+.climate-metric-row:first-child { border-top: 0; }
+.climate-metric-main { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.climate-metric-label { color: #3d5145; font-size: .84rem; font-weight: 650; }
+.climate-metric-value { color: #1a3022; font-size: .92rem; font-weight: 720; }
+.climate-metric-unit { color: #68776e; font-size: .78rem; font-weight: 500; }
+.climate-metric-meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 5px 0 0; padding: 0; }
+.climate-metric-meta div { display: flex; gap: 4px; font-size: .7rem; }
+.climate-metric-meta dt { color: #8a9690; }
+.climate-metric-meta dd { margin: 0; color: #516058; font-weight: 650; }
+
+/* Climate data type label */
+.climate-data-type-label { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: #7b887f; font-size: .72rem; }
+.climate-data-type-badge { border-radius: 999px; background: #edf3ef; color: #486457; padding: 3px 8px; font-size: .68rem; font-weight: 720; }
+
+/* Climate annual summary */
+.climate-annual-summary { display: grid; grid-template-columns: 18px 1fr; gap: 10px; border-radius: 12px; background: #f2f6f3; color: #55635a; padding: 14px; font-size: .8rem; line-height: 1.55; }
+.climate-annual-summary svg { width: 16px; color: #07883d; margin-top: 2px; }
+.climate-annual-summary p { margin: 0; }
+
+/* Climate unknown state */
+.climate-unknown { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 24px; border: 1px dashed #cfddd4; border-radius: 14px; background: #f8faf8; }
+.climate-unknown-label { margin: 0; color: #8a9690; font-size: 1.1rem; font-weight: 750; letter-spacing: -.02em; }
+.climate-unknown-note { margin: 0; color: #8a9690; font-size: .8rem; line-height: 1.5; }
+
+/* Evidence mode badge */
+.evidence-mode-badge { border-radius: 999px; background: #edf3ef; color: #516058; padding: 2px 7px; font-size: .66rem; font-weight: 720; }
+
+/* Evidence section styles (used by EvidenceSection.tsx) */
+.evidence-section { padding: 22px; }
+.evidence-section-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.evidence-section-title { margin: 0; color: #1a3022; font-size: 1rem; font-weight: 740; letter-spacing: -.02em; }
+.evidence-pill { border-radius: 999px; padding: 5px 10px; font-size: .7rem; font-weight: 720; }
+.evidence-pill-accepted { background: #e4f7ea; color: #087339; }
+.evidence-pill-stale { background: #fff1d7; color: #986008; }
+.evidence-pill-unavailable { background: #f1f3f4; color: #6b7280; }
+.evidence-unavailable-note { margin: 0; color: #8a9690; font-size: .82rem; line-height: 1.55; }
+.evidence-value-list { display: flex; flex-direction: column; gap: 0; margin: 0 0 10px; padding: 0; list-style: none; }
+.evidence-value-row { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #edf1ee; font-size: .82rem; }
+.evidence-value-row:first-child { border-top: 0; }
+.evidence-value-number { color: #1a3022; font-size: .95rem; font-weight: 720; }
+.evidence-value-unit { color: #68776e; font-size: .76rem; }
+.evidence-value-source { color: #8a9690; font-size: .72rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evidence-value-mode { justify-self: end; }
+.evidence-provenance { margin-top: 10px; }
+.evidence-provenance-toggle { display: flex; align-items: center; gap: 6px; color: #607067; cursor: pointer; font-size: .76rem; font-weight: 680; list-style: none; }
+.evidence-provenance-toggle svg { width: 15px; height: 15px; }
+.evidence-provenance-table { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: .73rem; }
+.evidence-provenance-table th, .evidence-provenance-table td { height: 36px; border-top: 1px solid #edf1ee; padding: 0 10px; text-align: left; }
+.evidence-provenance-table th { border-top: 0; background: #f5f8f6; color: #738178; font-weight: 680; }
+.evidence-meta { margin: 6px 0 0; color: #7b887f; font-size: .74rem; line-height: 1.45; }
+
+/* Digital twin page layout */
+.twin-page { width: min(1180px, 100%); margin: 0 auto; }
+.twin-page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.twin-page-header h1 { margin: 0; color: #13271c; font-size: clamp(2rem, 4vw, 3rem); line-height: 1.08; letter-spacing: -.045em; }
+.twin-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.twin-snapshot-time { color: #7a8880; font-size: .74rem; }
+.twin-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+.twin-map-panel { position: sticky; top: 90px; }
+.twin-map-canvas { min-height: 440px; border-radius: 18px; overflow: hidden; }
+.twin-map-caption { margin: 8px 0 0; color: #7a8880; font-size: .72rem; line-height: 1.45; }
+.twin-evidence-panel { display: flex; flex-direction: column; gap: 14px; }
+.twin-loading { display: flex; flex-direction: column; gap: 14px; }
+.twin-footer-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.job-progress-panel { border: 1px solid #dfe7e1; border-radius: 16px; background: #fff; padding: 22px; }
+.job-stage-list { display: flex; flex-direction: column; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }
+.job-stage-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid #edf1ee; font-size: .82rem; }
+.job-stage-item:first-child { border-top: 0; }
+.job-stage-name { color: #3d5145; text-transform: capitalize; }
+.job-stage-status { color: #8a9690; font-size: .72rem; font-weight: 720; text-transform: capitalize; }
+.job-stage-item[data-status='running'] .job-stage-status { color: #07883d; }
+.job-stage-item[data-status='completed'] .job-stage-status { color: #08763a; }
+.job-stage-item[data-status='failed'] .job-stage-status { color: #b23a3a; }
+
+@media (max-width: 960px) {
+  .twin-layout { grid-template-columns: 1fr; }
+  .twin-map-panel { position: static; }
+  .twin-map-canvas { min-height: 320px; }
+  .climate-tab-list { overflow-x: auto; padding-bottom: 0; }
+  .climate-tab-button { white-space: nowrap; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
