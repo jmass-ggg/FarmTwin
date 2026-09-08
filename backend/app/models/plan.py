@@ -43,6 +43,7 @@ class ProposalStatus(str, PyEnum):
 ProposalStatusType = Enum(
     ProposalStatus,
     native_enum=False,
+    values_callable=lambda enum: [item.value for item in enum],
     length=20,
     name="proposalstatus",
 )
@@ -79,6 +80,9 @@ class PlanEntry(Base, UUIDMixin, TimestampMixin):
         nullable=False,
     )
 
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    field_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     crop_name: Mapped[str] = mapped_column(String(100), nullable=False)
 
     planting_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -105,7 +109,7 @@ class PlanEntry(Base, UUIDMixin, TimestampMixin):
     data_mode: Mapped[str] = mapped_column(String(50), nullable=False)
 
     # Suitability score [0–100] from crop engine at save time
-    suitability_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    suitability_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Crop engine version that generated this recommendation
     engine_version: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -175,8 +179,8 @@ class ChangeProposal(Base, UUIDMixin):
         nullable=False,
     )
 
-    old_suitability_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    new_suitability_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    old_suitability_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    new_suitability_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Environmental inputs that changed: {field: {old_value, new_value}}
     changed_inputs: Mapped[dict] = mapped_column(

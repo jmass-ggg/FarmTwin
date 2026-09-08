@@ -16,7 +16,10 @@ Requirements: 2.1, 2.2, 3.4
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import calendar
+import math
+from datetime import date, datetime, timedelta, timezone
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -88,6 +91,8 @@ class SnapshotContext:
 
     # Seasonal climate baseline rainfall (mm) for drought ratio calculation
     climate_baseline_rainfall_mm: float | None = None
+    relative_humidity_pct: float | None = None
+    irrigation_total_mm: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -119,203 +124,107 @@ def _is_accepted(envelope: dict | None) -> bool:
 # context_from_snapshot
 # ---------------------------------------------------------------------------
 
+def growing_interval(start: date, months: int) -> tuple[date, date]:
+    end_month = start.month - 1 + months
+    year, month = start.year + end_month // 12, end_month % 12 + 1
+    return start, date(year, month, min(start.day, calendar.monthrange(year, month)[1]))
+
+
+def seasonal_values(climate: dict, start: date, months: int) -> tuple[float | None, float | None]:
+    """Integrate climate normals over the actual calendar interval, including leap days."""
+    start, end = growing_interval(start, months)
+    monthly = climate.get("all_monthly_means") or {}
+    temperatures = monthly.get("temperature_2m_mean") or {}
+    rain = monthly.get("precipitation_sum") or {}
+    temp_sum, rain_sum, count = 0.0, 0.0, 0
+    temp_complete = True
+    rain_complete = climate.get("aggregation_version") == "monthly-totals-v2"
+    day = start
+    while day < end:
+        temp, precip = temperatures.get(str(day.month)), rain.get(str(day.month))
+        if temp is None:
+            temp_complete = False
+        else:
+            temp_sum += float(temp)
+        if precip is None:
+            rain_complete = False
+        else:
+            rain_sum += float(precip) / calendar.monthrange(day.year, day.month)[1]
+        count += 1
+        day += timedelta(days=1)
+    return (temp_sum / count if temp_complete and count else None,
+            rain_sum if rain_complete and count else None)
+
+
 def context_from_snapshot(
-    snapshot: "AnalysisSnapshot",
-    planting_month: int,
-    crop_duration: int,
+    snapshot: "AnalysisSnapshot", planting_month: int, crop_duration: int,
+    planting_date: date | None = None,
 ) -> SnapshotContext:
-    """Build a SnapshotContext from a Phase 5 AnalysisSnapshot.
-
-    Extracts temperature, rainfall, soil, NDVI, and VPD from the snapshot
-    payloads.  Fields that are unavailable are set to None and recorded in
-    *demonstration_input_fields*.
-
-    The *planting_month* and *crop_duration* parameters are accepted for
-    future projection logic (e.g. selecting the right seasonal window from
-    the climate baseline).  In Phase 6 the climate baseline monthly means
-    are used if available; otherwise the snapshot's current weather value
-    is used.
-
-    Requirements: 2.1, 3.4
-    """
-    real_fields: set[str] = set()
-    demo_fields: set[str] = set()
-
-    # ------------------------------------------------------------------
-    # Temperature — prefer climate_baseline monthly mean for planting_month;
-    # fall back to current weather temperature_2m.
-    # ------------------------------------------------------------------
-    temperature_mean_c: float | None = None
-    temperature_source: str | None = None
-
+    """Missing evidence stays missing. Climate normals are not a current forecast."""
+    start = planting_date or date(datetime.now(timezone.utc).year, planting_month, 1)
     climate = snapshot.climate_baseline or {}
-    temp_baseline_entry = climate.get("temperature_2m_mean")
-    temp_val: float | None = None
-    temp_src: str | None = None
-
-    if isinstance(temp_baseline_entry, dict):
-        # Try all_monthly_means first (30-year means per month)
-        all_monthly = climate.get("all_monthly_means", {})
-        temp_monthly = all_monthly.get("temperature_2m_mean", {})
-        month_key = str(planting_month)
-        monthly_val = temp_monthly.get(month_key)
-        if monthly_val is not None:
-            temp_val = float(monthly_val)
-            temp_src = "open-meteo-era5"
-        else:
-            # Fall back to baseline monthly mean from the provenance envelope
-            baseline_env = temp_baseline_entry.get("baseline_monthly_mean")
-            if _is_accepted(baseline_env):
-                temp_val = _env_value(baseline_env)
-                temp_src = _env_source(baseline_env)
-
-    if temp_val is None:
-        # Last resort: current weather temperature_2m
-        weather = snapshot.weather or {}
-        temp_env = (weather.get("fields") or {}).get("temperature_2m")
-        if _is_accepted(temp_env):
-            temp_val = _env_value(temp_env)
-            temp_src = _env_source(temp_env)
-
-    if temp_val is not None:
-        temperature_mean_c = temp_val
-        temperature_source = temp_src
-        real_fields.add("temperature_mean_c")
-    else:
-        demo_fields.add("temperature_mean_c")
-
-    # ------------------------------------------------------------------
-    # Rainfall — multiply monthly precipitation by crop_duration to get
-    # total mm over the full growing period.
-    # ------------------------------------------------------------------
-    rainfall_total_mm: float | None = None
-    rainfall_source: str | None = None
-
-    precip_baseline_entry = climate.get("precipitation_sum")
-    precip_val: float | None = None
-    precip_src: str | None = None
-
-    if isinstance(precip_baseline_entry, dict):
-        all_monthly = climate.get("all_monthly_means", {})
-        precip_monthly = all_monthly.get("precipitation_sum", {})
-        month_key = str(planting_month)
-        monthly_precip = precip_monthly.get(month_key)
-        if monthly_precip is not None:
-            # Scale monthly precipitation by number of growing months
-            precip_val = float(monthly_precip) * crop_duration
-            precip_src = "open-meteo-era5"
-        else:
-            baseline_env = precip_baseline_entry.get("baseline_monthly_mean")
-            if _is_accepted(baseline_env):
-                base_monthly = _env_value(baseline_env)
-                if base_monthly is not None:
-                    precip_val = base_monthly * crop_duration
-                    precip_src = _env_source(baseline_env)
-
-    if precip_val is None:
-        # Last resort: current weather precipitation (single snapshot value)
-        weather = snapshot.weather or {}
-        precip_env = (weather.get("fields") or {}).get("precipitation")
-        if _is_accepted(precip_env):
-            raw = _env_value(precip_env)
-            if raw is not None:
-                precip_val = raw * crop_duration
-                precip_src = _env_source(precip_env)
-
-    if precip_val is not None:
-        rainfall_total_mm = precip_val
-        rainfall_source = precip_src
-        real_fields.add("rainfall_total_mm")
-    else:
-        demo_fields.add("rainfall_total_mm")
-
-    # ------------------------------------------------------------------
-    # Soil — use 0–5 cm depth; extract pH, clay, sand
-    # ------------------------------------------------------------------
-    soil_ph: float | None = None
-    soil_clay_pct: float | None = None
-    soil_sand_pct: float | None = None
-    soil_source: str | None = None
-    soil_is_modelled = True
-
-    soil_payload = snapshot.soil or {}
-    depths = soil_payload.get("depths", {})
-    top_depth = depths.get("0-5cm") or depths.get("0_5cm") or {}
-
-    ph_entry = top_depth.get("phh2o", {})
-    ph_env = ph_entry.get("mean") if isinstance(ph_entry, dict) else None
-    if _is_accepted(ph_env):
-        soil_ph = _env_value(ph_env)
-        soil_source = _env_source(ph_env)
-        real_fields.add("soil_ph")
-    else:
-        demo_fields.add("soil_ph")
-
-    clay_entry = top_depth.get("clay", {})
-    clay_env = clay_entry.get("mean") if isinstance(clay_entry, dict) else None
-    if _is_accepted(clay_env):
-        soil_clay_pct = _env_value(clay_env)
-        if soil_source is None:
-            soil_source = _env_source(clay_env)
-        real_fields.add("soil_clay_pct")
-    else:
-        demo_fields.add("soil_clay_pct")
-
-    sand_entry = top_depth.get("sand", {})
-    sand_env = sand_entry.get("mean") if isinstance(sand_entry, dict) else None
-    if _is_accepted(sand_env):
-        soil_sand_pct = _env_value(sand_env)
-        real_fields.add("soil_sand_pct")
-    else:
-        demo_fields.add("soil_sand_pct")
-
-    # ------------------------------------------------------------------
-    # NDVI — from satellite payload
-    # ------------------------------------------------------------------
-    ndvi_mean: float | None = None
-    ndvi_source: str | None = None
-
+    temperature, rainfall = seasonal_values(climate, start, crop_duration)
+    def accepted(envelope):
+        value = _env_value(envelope) if _is_accepted(envelope) else None
+        return float(value) if isinstance(value, (float, int)) and math.isfinite(value) else None
+    soil = snapshot.soil or {}
+    depths = soil.get("depths") or {}
+    top = depths.get("0_5cm") or depths.get("0-5cm") or {}
+    soil_values = {key: accepted((top.get(key) or {}).get("mean")) for key in ("phh2o", "clay", "sand")}
     satellite = snapshot.satellite or {}
-    ndvi_env = satellite.get("ndvi")
-    if _is_accepted(ndvi_env):
-        ndvi_mean = _env_value(ndvi_env)
-        ndvi_source = _env_source(ndvi_env)
-        real_fields.add("ndvi_mean")
-    else:
-        demo_fields.add("ndvi_mean")
-
-    # ------------------------------------------------------------------
-    # VPD — from Conduit payload
-    # ------------------------------------------------------------------
-    vpd_kpa: float | None = None
-
     conduit = snapshot.conduit or {}
-    vpd_env = conduit.get("vpd_mean_kpa")
-    if _is_accepted(vpd_env):
-        vpd_kpa = _env_value(vpd_env)
-        real_fields.add("vpd_kpa")
-    else:
-        demo_fields.add("vpd_kpa")
-
+    weather = snapshot.weather or {}
+    daily = weather.get("daily") or {}
+    # Require seven complete daily totals. A partial forecast is not seven-day rainfall.
+    rain_days = daily.get("precipitation_sum") or []
+    rain_7d = sum(rain_days[:7]) if len(rain_days) >= 7 and all(v is not None for v in rain_days[:7]) else None
+    wind_days = daily.get("wind_speed_10m_max") or []
+    wind = max(wind_days[:7]) if len(wind_days) >= 7 and all(v is not None for v in wind_days[:7]) else None
+    wind_unit = (weather.get("daily_units") or {}).get("wind_speed_10m_max")
+    if wind is not None:
+        wind = wind / 3.6 if wind_unit == "km/h" else wind if wind_unit in ("m/s", "ms") else None
+    slope = accepted((snapshot.terrain or {}).get("mean_slope_deg"))
+    values = {
+        "temperature_mean_c": temperature, "rainfall_total_mm": rainfall,
+        "soil_ph": soil_values["phh2o"], "soil_clay_pct": soil_values["clay"],
+        "soil_sand_pct": soil_values["sand"], "ndvi_mean": accepted(satellite.get("ndvi")),
+        "vpd_kpa": accepted(conduit.get("vpd_mean_kpa")),
+    }
     return SnapshotContext(
-        source="snapshot",
-        snapshot_id=str(snapshot.id),
-        data_mode=snapshot.data_mode,
-        temperature_mean_c=temperature_mean_c,
-        temperature_source=temperature_source,
-        rainfall_total_mm=rainfall_total_mm,
-        rainfall_source=rainfall_source,
-        soil_ph=soil_ph,
-        soil_clay_pct=soil_clay_pct,
-        soil_sand_pct=soil_sand_pct,
-        soil_source=soil_source,
-        soil_is_modelled=soil_is_modelled,
-        ndvi_mean=ndvi_mean,
-        ndvi_source=ndvi_source,
-        vpd_kpa=vpd_kpa,
-        real_input_fields=frozenset(real_fields),
-        demonstration_input_fields=frozenset(demo_fields),
+        source="snapshot", snapshot_id=str(snapshot.id), data_mode=snapshot.data_mode,
+        **values, temperature_source="open-meteo-era5" if temperature is not None else None,
+        rainfall_source="open-meteo-era5" if rainfall is not None else None,
+        soil_source="soilgrids" if any(v is not None for v in soil_values.values()) else None,
+        soil_is_modelled=True, ndvi_source="sentinel-2" if values["ndvi_mean"] is not None else None,
+        real_input_fields=frozenset(k for k, v in values.items() if v is not None),
+        demonstration_input_fields=frozenset(), rain_7d_mm=rain_7d, wind_max_ms=wind,
+        slope_pct=100 * math.tan(math.radians(slope)) if slope is not None else None,
+        climate_baseline_rainfall_mm=rainfall,
+        relative_humidity_pct=accepted((weather.get("fields") or {}).get("relative_humidity_2m")),
     )
+
+
+def context_for_risks(snapshot: "AnalysisSnapshot") -> SnapshotContext:
+    """Use current weather for current hazards; compare matched seven-day rain periods."""
+    valid = snapshot.valid_time_utc
+    context = context_from_snapshot(snapshot, valid.month, 1, valid.date())
+    temp_env = ((snapshot.weather or {}).get("fields") or {}).get("temperature_2m")
+    temperature = _env_value(temp_env) if _is_accepted(temp_env) else None
+    monthly = ((snapshot.climate_baseline or {}).get("all_monthly_means") or {}).get("precipitation_sum") or {}
+    baseline = 0.0
+    for offset in range(7):
+        day = valid.date() + timedelta(days=offset)
+        value = monthly.get(str(day.month))
+        if value is None or (snapshot.climate_baseline or {}).get("aggregation_version") != "monthly-totals-v2":
+            baseline = None
+            break
+        baseline += value / calendar.monthrange(day.year, day.month)[1]
+    return replace(context, temperature_mean_c=temperature, rainfall_total_mm=context.rain_7d_mm,
+                   climate_baseline_rainfall_mm=baseline)
+
+
+def with_irrigation(context: SnapshotContext, mode: str, monthly_mm: float | None, duration: int) -> SnapshotContext:
+    return replace(context, irrigation_total_mm=(monthly_mm or 0.0) * duration if mode == "irrigated" else 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -337,8 +246,9 @@ def context_from_demonstration(
 
     Requirements: 2.2, 3.4
     """
-    temperature_c, monthly_rainfall_mm = _seasonal_climate(latitude, longitude, planting_month)
-    rainfall_total_mm = monthly_rainfall_mm * crop_duration
+    seasons = [_seasonal_climate(latitude, longitude, (planting_month - 1 + i) % 12 + 1) for i in range(crop_duration)]
+    temperature_c = sum(t for t, _ in seasons) / crop_duration
+    rainfall_total_mm = sum(r for _, r in seasons)
 
     # Demonstration uses neutral soil and environmental placeholders
     # (documented in the decision_support.py comments)

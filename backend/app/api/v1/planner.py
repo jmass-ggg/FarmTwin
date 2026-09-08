@@ -51,6 +51,8 @@ router = APIRouter(tags=["Annual Planner"])
 
 def _entry_to_response(entry: PlanEntry) -> PlanEntryResponse:
     return PlanEntryResponse(
+        revision=entry.revision,
+        field_name=entry.field_name,
         id=entry.id,
         farm_id=entry.farm_id,
         crop_name=entry.crop_name,
@@ -105,7 +107,7 @@ def _proposal_to_response(proposal: ChangeProposal) -> ChangeProposalResponse:
 )
 async def get_annual_plan(
     farm_id: UUID,
-    year: int = Query(description="Calendar year (e.g. 2025)"),
+    year: int = Query(description="Calendar year", ge=1900, le=2100),
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_request_session),
 ) -> AnnualPlanResponse:
@@ -168,6 +170,7 @@ async def create_plan_entry(
             cultivation_mode=data.cultivation_mode,
             irrigation_mm=data.irrigation_mm,
             area_ha=data.area_ha,
+            field_name=data.field_name,
         ),
     )
     return _entry_to_response(entry)
@@ -202,10 +205,12 @@ async def update_plan_entry(
         farm_id=farm_id,
         entry_id=entry_id,
         data=ServiceEntryUpdate(
+            expected_revision=data.expected_revision,
             planting_date=data.planting_date,
             cultivation_mode=data.cultivation_mode,
             irrigation_mm=data.irrigation_mm,
             area_ha=data.area_ha,
+            field_name=data.field_name,
         ),
     )
     return _entry_to_response(entry)
@@ -311,7 +316,7 @@ async def dismiss_change_proposal(
 )
 async def export_annual_plan(
     farm_id: UUID,
-    year: int = Query(description="Calendar year (e.g. 2025)"),
+    year: int = Query(description="Calendar year", ge=1900, le=2100),
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_request_session),
 ) -> PlanExportResponse:

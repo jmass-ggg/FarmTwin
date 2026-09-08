@@ -29,36 +29,41 @@ import {
 } from '@/components/ui/sheet';
 
 const primaryNavigation = [
-  { href: '/app', label: 'Overview', icon: Home, available: true },
+  { href: '/app', label: 'Overview', icon: Home, available: true, comingSoon: undefined },
   {
     href: '/app/tools/digital-twin',
     label: 'Farm Digital Twin',
     icon: Map,
     available: false,
+    comingSoon: 'Phase 5 — standalone page not yet built',
   },
   {
     href: '/app/tools/crop-simulator',
     label: 'Crop Simulator',
     icon: FlaskConical,
     available: true,
+    comingSoon: undefined,
   },
   {
     href: '/app/tools/annual-plan',
     label: 'Annual Crop Plan',
     icon: CalendarDays,
     available: true,
+    comingSoon: undefined,
   },
   {
     href: '/app/tools/disaster-center',
     label: 'Climate Risk Center',
     icon: ShieldAlert,
     available: true,
+    comingSoon: undefined,
   },
   {
     href: '/app/tools/climate',
-    label: 'Climate',
+    label: 'Climate Scenarios',
     icon: CloudSun,
     available: false,
+    comingSoon: 'Scenarios available inside Crop Simulator and Annual Plan',
   },
 ];
 
@@ -74,7 +79,7 @@ function Navigation({ close }: { close?: () => void }) {
     <nav className="app-navigation" aria-label="Workspace navigation">
       <div className="nav-group">
         <p className="nav-label">Workspace</p>
-        {primaryNavigation.map(({ href, label, icon: Icon, available }) => {
+        {primaryNavigation.map(({ href, label, icon: Icon, available, comingSoon }) => {
           const active =
             href === '/app'
               ? pathname === href
@@ -85,6 +90,33 @@ function Navigation({ close }: { close?: () => void }) {
                   pathname.includes('/risks')) ||
                 (href.endsWith('crop-simulator') &&
                   pathname.includes('/crops'));
+          if (!available) {
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={close}
+                className="nav-item nav-item-unavailable"
+                data-active={active || undefined}
+                aria-current={active ? 'page' : undefined}
+                aria-describedby={`nav-unavailable-${href.split('/').pop()}`}
+              >
+                <Icon aria-hidden="true" />
+                <span className="nav-item-text">
+                  {label}
+                  {comingSoon && (
+                    <small
+                      id={`nav-unavailable-${href.split('/').pop()}`}
+                      className="nav-coming-soon"
+                    >
+                      {comingSoon}
+                    </small>
+                  )}
+                </span>
+                <LockKeyhole className="nav-lock" aria-label="Not yet implemented" />
+              </Link>
+            );
+          }
           return (
             <Link
               key={href}
@@ -96,9 +128,6 @@ function Navigation({ close }: { close?: () => void }) {
             >
               <Icon aria-hidden="true" />
               <span>{label}</span>
-              {!available && (
-                <LockKeyhole className="nav-lock" aria-label="Farm required" />
-              )}
             </Link>
           );
         })}

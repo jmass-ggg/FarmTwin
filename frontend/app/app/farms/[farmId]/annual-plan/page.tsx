@@ -79,11 +79,11 @@ function AddToPlanForm({
   const mutation = useMutation({
     mutationFn: (data: PlanEntryCreate) => createPlanEntry(farmId, data),
     onSuccess: () => {
-      toast.create({ title: `${cropName} added to plan`, type: 'success' });
+      toast.add({ title: `${cropName} added to plan`, type: 'success' });
       onSuccess();
     },
     onError: (err: Error) => {
-      toast.create({
+      toast.add({
         title: 'Could not add entry',
         description: err.message,
         type: 'error',
@@ -216,12 +216,12 @@ function DeleteEntryDialog({
   const mutation = useMutation({
     mutationFn: () => deletePlanEntry(farmId, entryId),
     onSuccess: () => {
-      toast.create({ title: `${cropName} removed from plan`, type: 'success' });
+      toast.add({ title: `${cropName} removed from plan`, type: 'success' });
       setOpen(false);
       onDeleted();
     },
     onError: (err: Error) => {
-      toast.create({ title: 'Delete failed', description: err.message, type: 'error' });
+      toast.add({ title: 'Delete failed', description: err.message, type: 'error' });
     },
   });
 
@@ -277,24 +277,24 @@ function ProposalDialog({ farmId, proposals, entries, onAccepted }: ProposalDial
   const acceptMutation = useMutation({
     mutationFn: (proposalId: string) => acceptChangeProposal(farmId, proposalId),
     onSuccess: () => {
-      toast.create({ title: 'Proposal accepted', type: 'success' });
+      toast.add({ title: 'Proposal accepted', type: 'success' });
       setOpen(false);
       onAccepted();
     },
     onError: (err: Error) => {
-      toast.create({ title: 'Accept failed', description: err.message, type: 'error' });
+      toast.add({ title: 'Accept failed', description: err.message, type: 'error' });
     },
   });
 
   const dismissMutation = useMutation({
     mutationFn: (proposalId: string) => dismissChangeProposal(farmId, proposalId),
     onSuccess: () => {
-      toast.create({ title: 'Proposal dismissed', type: 'success' });
+      toast.add({ title: 'Proposal dismissed', type: 'success' });
       setOpen(false);
       onAccepted();
     },
     onError: (err: Error) => {
-      toast.create({ title: 'Dismiss failed', description: err.message, type: 'error' });
+      toast.add({ title: 'Dismiss failed', description: err.message, type: 'error' });
     },
   });
 
@@ -516,7 +516,13 @@ export default function AnnualPlanPage() {
           </p>
         </div>
         <div className="planner-header-actions">
-          <span className="mode-pill">Demonstration index</span>
+          {plan.data?.data_mode && (
+            <span className="mode-pill">
+              {plan.data.data_mode === 'demonstration'
+                ? 'Demonstration index'
+                : plan.data.data_mode.replace(/_/g, ' ')}
+            </span>
+          )}
           {cropPlan.data && (
             <ProposalDialog
               farmId={farmId}

@@ -55,6 +55,7 @@ class IngestionStatus(str, PyEnum):
 QualityFlagType = Enum(
     QualityFlag,
     native_enum=False,
+    values_callable=lambda enum: [item.value for item in enum],
     length=20,
     name="qualityflag",
 )
@@ -62,6 +63,7 @@ QualityFlagType = Enum(
 IngestionStatusType = Enum(
     IngestionStatus,
     native_enum=False,
+    values_callable=lambda enum: [item.value for item in enum],
     length=20,
     name="ingestionstatus",
 )

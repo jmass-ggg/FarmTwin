@@ -16,6 +16,7 @@ Requirements: 3.1, 3.2, 3.3, 3.4, 3.5
 
 from __future__ import annotations
 
+import calendar
 import logging
 import statistics
 from datetime import date, datetime, timezone
@@ -77,7 +78,7 @@ def _baseline_date_range(reference_year: int) -> tuple[str, str]:
 
 
 def _compute_monthly_means(
-    dates: list[str], values: list[float | None]
+    dates: list[str], values: list[float | None], *, accumulation: bool = False
 ) -> dict[int, float | None]:
     """Compute monthly means from daily time-series data.
 
@@ -86,20 +87,22 @@ def _compute_monthly_means(
 
     Requirements: 3.1, 3.2
     """
-    monthly: dict[int, list[float]] = {m: [] for m in range(1, 13)}
-    for d_str, v in zip(dates, values):
-        if v is None:
+    # Reject incomplete year-months: missing rainfall days are not zero rain.
+    grouped: dict[tuple[int, int], dict[int, float]] = {}
+    for d_str, value in zip(dates, values):
+        if value is None:
             continue
         try:
-            month = date.fromisoformat(d_str).month
-            monthly[month].append(v)
+            day = date.fromisoformat(d_str)
         except ValueError:
             continue
-
-    return {
-        m: statistics.mean(vals) if vals else None
-        for m, vals in monthly.items()
-    }
+        grouped.setdefault((day.year, day.month), {})[day.day] = float(value)
+    monthly: dict[int, list[float]] = {m: [] for m in range(1, 13)}
+    for (year, month), days in grouped.items():
+        if len(days) != calendar.monthrange(year, month)[1]:
+            continue
+        monthly[month].append(sum(days.values()) if accumulation else statistics.mean(days.values()))
+    return {month: statistics.mean(values) if values else None for month, values in monthly.items()}
 
 
 def _compute_anomaly(
@@ -133,18 +136,19 @@ def _build_climate_payload(
     dates = daily.get("time", [])
 
     baseline_period = f"{baseline_start[:4]}–{baseline_end[:4]}"
-    current_month = datetime.now(tz=timezone.utc).month
+    current_month = datetime.fromisoformat(retrieved_at).month
 
     result: dict[str, Any] = {
         "baseline_source": BASELINE_SOURCE_DESCRIPTION,
         "baseline_period": baseline_period,
-        "anomaly_method": "current_minus_30yr_mean",
+        "anomaly_method": "unavailable_without_matching_observation_period",
+        "aggregation_version": "monthly-totals-v2",
         "retrieved_at": retrieved_at,
     }
 
     for var in ARCHIVE_DAILY_VARIABLES:
         raw_values = daily.get(var, [])
-        monthly_means = _compute_monthly_means(dates, raw_values)
+        monthly_means = _compute_monthly_means(dates, raw_values, accumulation=var == "precipitation_sum")
         baseline_this_month = monthly_means.get(current_month)
 
         # Determine current value from weather payload if available
@@ -156,7 +160,8 @@ def _build_climate_payload(
             elif var == "precipitation_sum" and "precipitation" in fields:
                 current_value = fields["precipitation"].get("value")
 
-        anomaly = _compute_anomaly(current_value, baseline_this_month)
+        # A current reading and a monthly climate normal have different periods.
+        anomaly = None
         unit = _UNITS.get(var, "unknown")
 
         result[var] = {
@@ -193,7 +198,7 @@ def _build_climate_payload(
         var: {
             str(month): mean
             for month, mean in _compute_monthly_means(
-                dates, daily.get(var, [])
+                dates, daily.get(var, []), accumulation=var == "precipitation_sum"
             ).items()
         }
         for var in ARCHIVE_DAILY_VARIABLES
@@ -258,6 +263,7 @@ async def fetch(
         "start_date": baseline_start,
         "end_date": baseline_end,
         "daily": ",".join(ARCHIVE_DAILY_VARIABLES),
+        "models": "era5_land",
         "timezone": "UTC",
     }
 

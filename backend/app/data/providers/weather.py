@@ -68,66 +68,44 @@ def _iso_now() -> str:
 
 
 def _extract_current_value(data: dict, variable: str) -> float | None:
-    """Extract the most recent hourly value for a variable.
-
-    Open-Meteo returns hourly arrays. We take the last non-null value
-    from the hourly block as "current" when available.
-    Falls back to None if the variable is absent or all values are null.
-
-    Requirements: 2.1, 2.3
-    """
-    hourly = data.get("hourly", {})
-    values = hourly.get(variable)
-    if not values:
-        return None
-    # Return the first non-None value (most recent current conditions)
-    for v in reversed(values):
-        if v is not None:
-            return float(v)
-    return None
+    """Use the provider's explicit current observation, never a future hour."""
+    value = (data.get("current") or {}).get(variable)
+    return float(value) if isinstance(value, (int, float)) else None
 
 
-def _build_weather_payload(
-    data: dict,
-    retrieved_at: str,
-    data_mode: str,
-) -> dict:
-    """Build the weather payload dict from an Open-Meteo response.
-
-    Each field is wrapped in a provenance envelope.
-    model_name and issue_time are recorded from the response metadata.
-
-    Requirements: 2.2, 2.3
-    """
-    # Metadata from the response
-    hourly_units = data.get("hourly_units", {})
-    # Open-Meteo doesn't expose model issue time in the standard endpoint;
-    # we use the generation time as a proxy.
-    generation_time = data.get("generationtime_ms")
-    # The valid time for current conditions is "now" (retrieved_at)
-    acquired_at = retrieved_at
-
-    fields: dict[str, Any] = {}
+def _build_weather_payload(data: dict, retrieved_at: str, data_mode: str) -> dict:
+    current = data.get("current") or {}
+    acquired_at = current.get("time")
+    if acquired_at and not acquired_at.endswith("Z") and "+" not in acquired_at:
+        acquired_at += "+00:00"
+    fields = {}
     for var in CURRENT_VARIABLES:
         value = _extract_current_value(data, var)
-        unit = _UNITS.get(var, hourly_units.get(var, "unknown"))
+        unit = (data.get("current_units") or {}).get(var, _UNITS[var])
+        if var == "wind_speed_10m" and value is not None:
+            if unit == "km/h":
+                value /= 3.6
+            elif unit in ("mph", "mp/h"):
+                value *= 0.44704
+            elif unit not in ("m/s", "ms"):
+                value = None
+            unit = "m/s"
         fields[var] = provenance_envelope(
-            value=value,
-            unit=unit,
-            source=SOURCE_NAME,
-            acquired_at=acquired_at,
-            retrieved_at=retrieved_at,
+            value=value, unit=unit, source=SOURCE_NAME,
+            acquired_at=acquired_at, retrieved_at=retrieved_at,
             data_mode=data_mode,
-            quality=EVIDENCE_ACCEPTED if value is not None else EVIDENCE_UNAVAILABLE,
+            quality=EVIDENCE_ACCEPTED if value is not None and acquired_at else EVIDENCE_UNAVAILABLE,
             resolution_m=RESOLUTION_M,
         )
-
     return {
         "fields": fields,
+        "hourly": data.get("hourly") or {},
+        "hourly_units": data.get("hourly_units") or {},
+        "daily": data.get("daily") or {},
+        "daily_units": data.get("daily_units") or {},
         "model_metadata": {
-            "source": SOURCE_NAME,
-            "generation_time_ms": generation_time,
-            "forecast_horizon_days": 7,
+            "source": SOURCE_NAME, "issue_time": None,
+            "valid_time": acquired_at, "forecast_horizon_days": 7,
             "retrieved_at": retrieved_at,
         },
     }
@@ -178,7 +156,10 @@ async def fetch(
     params = {
         "latitude": centroid_lat,
         "longitude": centroid_lon,
+        "current": ",".join(CURRENT_VARIABLES),
         "hourly": ",".join(CURRENT_VARIABLES),
+        "daily": "temperature_2m_min,temperature_2m_max,temperature_2m_mean,precipitation_sum,wind_speed_10m_max",
+        "wind_speed_unit": "ms",
         "forecast_days": 7,
         "timezone": "UTC",
     }

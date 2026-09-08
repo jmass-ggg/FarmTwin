@@ -18,13 +18,15 @@ const tools = {
     name: 'Farm Digital Twin',
     icon: Map,
     phase: 'Phase 5',
+    status: 'coming-soon' as const,
     prerequisite:
-      'A saved farm boundary and at least one supported environmental layer.',
+      'This view is planned but not yet implemented in the current build.',
   },
   'crop-simulator': {
     name: 'Crop Simulator',
     icon: FlaskConical,
     phase: 'Phase 6',
+    status: 'farm-required' as const,
     prerequisite:
       'A farm snapshot plus versioned crop requirements and suitability rules.',
   },
@@ -32,6 +34,7 @@ const tools = {
     name: 'Annual Crop Plan',
     icon: CalendarDays,
     phase: 'Phase 8',
+    status: 'farm-required' as const,
     prerequisite:
       'Verified crop suitability outputs for the selected farm and season.',
   },
@@ -39,15 +42,17 @@ const tools = {
     name: 'Disaster Center',
     icon: ShieldAlert,
     phase: 'Phase 7',
+    status: 'farm-required' as const,
     prerequisite:
       'A farm snapshot and implemented drought, flood, heat, rain, and wind rules.',
   },
   climate: {
-    name: 'Climate',
+    name: 'Climate Scenarios',
     icon: CloudSun,
     phase: 'Phase 9',
+    status: 'farm-required' as const,
     prerequisite:
-      'A selected farm and a source with a clearly identified forecast or outlook horizon.',
+      'Scenario controls are available inside the Crop Simulator and Annual Crop Plan once a farm is selected.',
   },
 } as const;
 
@@ -57,12 +62,42 @@ export default async function ToolPrerequisitePage({
   params: Promise<{ tool: string }>;
 }) {
   const { tool } = await params;
-  if (tool === 'annual-plan' || tool === 'disaster-center' || tool === 'crop-simulator') {
+  if (tool === 'annual-plan' || tool === 'disaster-center' || tool === 'crop-simulator' || tool === 'climate') {
     return <FarmToolChooser tool={tool} />;
   }
   const details = tools[tool as keyof typeof tools];
   if (!details) notFound();
   const Icon = details.icon;
+
+  if (details.status === 'coming-soon') {
+    return (
+      <div className="narrow-content">
+        <Link className="back-link" href="/app">
+          <ArrowLeft /> Back to overview
+        </Link>
+        <section className="workspace-card unavailable-page">
+          <span className="unavailable-icon">
+            <Icon />
+          </span>
+          <p className="section-kicker">{details.phase} · Coming soon</p>
+          <h1>{details.name}</h1>
+          <p className="page-lede">{details.prerequisite}</p>
+          <div className="prerequisite-notice">
+            <LockKeyhole />
+            <span>
+              <strong>Not yet implemented</strong> This feature is on the
+              roadmap but has not been built in the current release.
+            </span>
+          </div>
+          <div className="inline-actions">
+            <Button variant="outline" render={<Link href="/app/project" />}>
+              View roadmap
+            </Button>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="narrow-content">

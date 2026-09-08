@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from geoalchemy2.shape import to_shape
@@ -140,6 +140,15 @@ async def enqueue_analysis_job(
 
     Requirements: 1.1, 1.2, 1.3
     """
+    # Serialize enqueue requests for a farm; coalesce duplicate active requests.
+    await session.execute(select(Farm.id).where(Farm.id == farm_id).with_for_update())
+    active = await session.execute(select(AnalysisJob).where(
+        AnalysisJob.farm_id == farm_id, AnalysisJob.geometry_revision == geometry_revision,
+        AnalysisJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
+    ).order_by(AnalysisJob.created_at.desc()).limit(1))
+    existing = active.scalar_one_or_none()
+    if existing is not None:
+        return existing
     job = AnalysisJob(
         id=uuid.uuid4(),
         farm_id=farm_id,
@@ -159,8 +168,7 @@ async def enqueue_analysis_job(
     session.add(job)
     await session.flush()
 
-    if settings is not None:
-        await _publish_to_redis(job.id, settings)
+    # The committed database row is the durable queue. No publish-before-commit race.
 
     return job
 
@@ -193,13 +201,22 @@ async def run_analysis_job(
     async with session_factory() as session:
         async with session.begin():
             result = await session.execute(
-                select(AnalysisJob).where(AnalysisJob.id == job_id)
+                select(AnalysisJob).where(AnalysisJob.id == job_id).with_for_update()
             )
             job: AnalysisJob | None = result.scalar_one_or_none()
             if job is None:
                 logger.error("run_analysis_job: job %s not found.", job_id)
                 return None
 
+            now_utc = datetime.now(timezone.utc)
+            if job.status == JobStatus.COMPLETED:
+                return await session.get(AnalysisSnapshot, job.snapshot_id)
+            if job.attempts >= 3 or (job.lease_until and job.lease_until > now_utc):
+                return None
+            job.attempts += 1
+            attempt = job.attempts
+            job.lease_until = now_utc + timedelta(minutes=10)
+            job.error_message = None
             # Load farm geometry revision
             rev_result = await session.execute(
                 select(FarmGeometryRevision).where(
@@ -222,8 +239,7 @@ async def run_analysis_job(
             # Mark job running
             now = _iso_now()
             job.status = JobStatus.RUNNING
-            for stage_name in job.stages:
-                job.stages[stage_name] = _stage_entry("queued")
+            job.stages = {stage: _stage_entry() for stage in job.stages}
             await session.flush()
 
             # Extract centroid and polygon from geometry revision
@@ -241,13 +257,25 @@ async def run_analysis_job(
     logger.info("Starting analysis job %s (farm=%s, rev=%s).", job_id, job.farm_id, job.geometry_revision)
 
     # Each provider call is wrapped to capture exceptions as ProviderResult.error
+    async def update_stage(name: str, entry: dict):
+        async with session_factory() as stage_session:
+            async with stage_session.begin():
+                row = (await stage_session.execute(select(AnalysisJob).where(AnalysisJob.id == job_id).with_for_update())).scalar_one()
+                if row.attempts == attempt:
+                    row.stages = {**row.stages, name: entry}
+
     async def _safe_fetch(name: str, coro) -> tuple[str, ProviderResult]:
+        started = _iso_now()
+        await update_stage(name, _stage_started(started))
         try:
-            result = await coro
+            async with asyncio.timeout(300):
+                result = await coro
+            await update_stage(name, _stage_done(started, _iso_now()) if result.evidence_status == EVIDENCE_ACCEPTED else _stage_failed(started, _iso_now(), result.error_message or result.evidence_status))
             return name, result
         except Exception as exc:
             msg = f"{name} adapter raised unexpectedly: {exc}"
             logger.exception(msg)
+            await update_stage(name, _stage_failed(started, _iso_now(), msg))
             return name, ProviderResult.error(msg)
 
     data_mode = settings.data_mode.value
@@ -295,9 +323,17 @@ async def run_analysis_job(
         ),
     ]
 
-    raw_results: list[tuple[str, ProviderResult]] = await asyncio.gather(
-        *tasks, return_exceptions=False
-    )
+    if data_mode == "live":
+        raw_results = await asyncio.gather(*tasks, return_exceptions=False)
+    else:
+        # Close unused coroutine objects, including provider coroutines captured by wrappers.
+        for task in tasks:
+            task.cr_frame.f_locals["coro"].close()
+            task.close()
+        raw_results = [(name, ProviderResult(payload={}, evidence_status=EVIDENCE_UNAVAILABLE,
+                       error_message="Live acquisition is disabled in this data mode."))
+                       for name in ("weather", "climate", "satellite", "soil", "terrain")]
+
 
     adapter_results: dict[str, ProviderResult] = dict(raw_results)
 
@@ -345,6 +381,8 @@ async def run_analysis_job(
                     select(AnalysisJob).where(AnalysisJob.id == job_id)
                 )
                 db_job: AnalysisJob = job_result.scalar_one()
+                if db_job.status == JobStatus.COMPLETED or db_job.attempts != attempt:
+                    return None
 
                 # Build per-stage completion info
                 completion_now = _iso_now()
@@ -379,6 +417,9 @@ async def run_analysis_job(
                 persist_session.add(snapshot)
                 await persist_session.flush()
 
+                from app.services.planner_service import generate_proposals
+                await generate_proposals(persist_session, snapshot)
+                db_job.lease_until = None
                 db_job.status = JobStatus.COMPLETED
                 db_job.snapshot_id = snapshot.id
                 await persist_session.flush()
@@ -404,6 +445,9 @@ async def run_analysis_job(
                         select(AnalysisJob).where(AnalysisJob.id == job_id)
                     )
                     fail_job: AnalysisJob = fail_result.scalar_one()
+                    if fail_job.attempts != attempt:
+                        return None
+                    fail_job.lease_until = datetime.now(timezone.utc) + timedelta(seconds=30)
                     fail_job.status = JobStatus.FAILED
                     fail_job.error_message = msg
                     # Persist partial evidence_statuses in stages field

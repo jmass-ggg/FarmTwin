@@ -22,7 +22,8 @@ from app.core.exceptions import FarmValidationError, NotFoundError
 from app.core.security import Principal
 from app.domain.risk_engine import RiskResponse, assess_all
 from app.domain.risk_rules import ACTION_RULES
-from app.domain.snapshot_context import context_from_demonstration, context_from_snapshot
+from app.domain.snapshot_context import context_from_demonstration, context_for_risks
+from app.core.config import Settings
 from app.models.actions import ActionCompletion
 from app.models.farm import Farm
 from app.models.snapshot import AnalysisSnapshot
@@ -100,7 +101,7 @@ async def get_risks(
 
     # 3. Build SnapshotContext
     if snapshot is not None:
-        context = context_from_snapshot(snapshot, planting_month=1, crop_duration=4)
+        context = context_for_risks(snapshot)
         logger.debug(
             "Built snapshot context for risk assessment: farm=%s snapshot=%s data_mode=%s",
             farm_id,
@@ -108,11 +109,13 @@ async def get_risks(
             snapshot.data_mode,
         )
     else:
-        # Demonstration fallback (Requirement 1.2)
+        if Settings().data_mode.value != "demonstration":
+            raise NotFoundError("No analysis snapshot available. Run farm analysis first.")
+        # Explicit demonstration mode only
         context = context_from_demonstration(
             latitude=centroid.y,
             longitude=centroid.x,
-            planting_month=1,
+            planting_month=datetime.now(timezone.utc).month,
         )
         logger.debug(
             "No snapshot for farm %s — using demonstration fallback for risk assessment.",

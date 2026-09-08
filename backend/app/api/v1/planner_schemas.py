@@ -29,6 +29,7 @@ class PlanEntryCreate(BaseSchema):
 
     model_config = ConfigDict(extra="forbid")
 
+    field_name: str | None = Field(default=None, max_length=100)
     crop_name: str = Field(description="Crop name from the Phase 6 register")
     planting_date: date = Field(description="Intended planting date (ISO 8601 date)")
     cultivation_mode: Literal["rain_fed", "irrigated"] = Field(
@@ -65,6 +66,8 @@ class PlanEntryUpdate(BaseSchema):
 
     model_config = ConfigDict(extra="forbid")
 
+    expected_revision: int | None = Field(default=None, ge=1)
+    field_name: str | None = Field(default=None, max_length=100)
     planting_date: date | None = Field(
         default=None,
         description="New planting date (triggers harvest_date re-derivation)",
@@ -97,6 +100,8 @@ class PlanEntryResponse(ReadBaseSchema):
     Requirements: 2.1, 2.4
     """
 
+    revision: int = 1
+    field_name: str | None = None
     id: UUID = Field(description="Entry UUID")
     farm_id: UUID = Field(description="Farm UUID")
     crop_name: str = Field(description="Crop name")
@@ -113,7 +118,7 @@ class PlanEntryResponse(ReadBaseSchema):
         description="Snapshot UUID used at save time, or null for demonstration mode",
     )
     data_mode: str = Field(description="Data mode at save time: live | historical_replay | demonstration")
-    suitability_index: int = Field(
+    suitability_index: int | None = Field(
         description="Crop suitability score (0–100) from the engine at save time",
         ge=0,
         le=100,
@@ -155,12 +160,12 @@ class ChangeProposalResponse(ReadBaseSchema):
     id: UUID = Field(description="Proposal UUID")
     farm_id: UUID = Field(description="Farm UUID")
     entry_id: UUID = Field(description="Plan_Entry UUID this proposal refers to")
-    old_suitability_index: int = Field(
+    old_suitability_index: int | None = Field(
         description="Suitability index at the time the entry was saved",
         ge=0,
         le=100,
     )
-    new_suitability_index: int = Field(
+    new_suitability_index: int | None = Field(
         description="Suitability index under the new snapshot",
         ge=0,
         le=100,
@@ -206,7 +211,7 @@ class ExportEntryRow(ReadBaseSchema):
     cultivation_mode: str
     irrigation_mm: float | None
     area_ha: float
-    suitability_index: int
+    suitability_index: int | None
     data_mode: str
 
 

@@ -67,12 +67,12 @@ class ComponentScoresResponse(ReadBaseSchema):
     Requirements: 6.6
     """
 
-    temperature: int = Field(description="Temperature match score (0–100)")
-    water: int = Field(description="Water / rainfall adequacy score (0–100)")
-    soil: int = Field(description="Soil compatibility score (0–100)")
-    heat_safety: int = Field(description="Heat safety score (0–100)")
-    drought_flood_safety: int = Field(description="Drought / flood safety score (0–100)")
-    environmental_condition: int = Field(description="Environmental condition score (0–100)")
+    temperature: int | None = Field(description="Temperature match score (0–100)")
+    water: int | None = Field(description="Water / rainfall adequacy score (0–100)")
+    soil: int | None = Field(description="Soil compatibility score (0–100)")
+    heat_safety: int | None = Field(description="Heat safety score (0–100)")
+    drought_flood_safety: int | None = Field(description="Drought / flood safety score (0–100)")
+    environmental_condition: int | None = Field(description="Environmental condition score (0–100)")
 
 
 class SimulationResultResponse(ReadBaseSchema):
@@ -83,7 +83,7 @@ class SimulationResultResponse(ReadBaseSchema):
     """
 
     crop_name: str = Field(description="Crop name")
-    suitability_index: int = Field(description="Overall suitability index (0–100)", ge=0, le=100)
+    suitability_index: int | None = Field(description="Overall suitability index (0–100)", ge=0, le=100)
     label: str = Field(
         description="Qualitative label: 'Good match' | 'Possible match' | 'Higher caution'"
     )

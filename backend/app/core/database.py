@@ -18,7 +18,7 @@ from sqlalchemy import text
 from .config import Settings
 
 
-EXPECTED_ALEMBIC_HEAD = "0004_runtime_permissions"
+EXPECTED_ALEMBIC_HEAD = "0009_workflow_integrity"
 READINESS_OPERATION_SECONDS = 3.0
 READINESS_CLEANUP_SECONDS = 1.0
 
@@ -83,7 +83,7 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
         autocommit=False,
         autoflush=False,
         # Sessions must be explicitly closed
-        expire_on_commit=True,
+        expire_on_commit=False,
     )
 
 

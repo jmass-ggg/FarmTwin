@@ -23,7 +23,7 @@ from app.domain.snapshot_context import SnapshotContext
 # Constants
 # ---------------------------------------------------------------------------
 
-ENGINE_VERSION = "farmtwin-crop-v1"
+ENGINE_VERSION = "farmtwin-crop-v2"
 
 # Weights must sum to 1.0
 _WEIGHT_TEMPERATURE = 0.25
@@ -55,12 +55,12 @@ _POSSIBLE_MATCH_THRESHOLD = 68
 class ComponentScores:
     """Individual 0–100 scores for each scoring dimension."""
 
-    temperature: float
-    water: float
-    soil: float
-    heat_safety: float
-    drought_flood_safety: float
-    environmental_condition: float
+    temperature: float | None
+    water: float | None
+    soil: float | None
+    heat_safety: float | None
+    drought_flood_safety: float | None
+    environmental_condition: float | None
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ class SimulationResult:
     """Full result of scoring one crop against one SnapshotContext."""
 
     crop_name: str
-    suitability_index: int            # 0–100 weighted sum
+    suitability_index: int | None            # 0–100 weighted sum
     label: str                        # "Good match" | "Possible match" | "Higher caution"
     components: ComponentScores
     limiting_factor: str              # name of the component with lowest contribution
@@ -316,17 +316,9 @@ _COMPONENT_NAMES = {
 
 def _limiting_factor(components: ComponentScores, weights: dict[str, float]) -> str:
     """Return the name of the component with the highest negative impact."""
-    # Weighted contribution — lowest weighted contribution → biggest constraint
-    contributions = {
-        "temperature": components.temperature * weights["temperature"],
-        "water": components.water * weights["water"],
-        "soil": components.soil * weights["soil"],
-        "heat_safety": components.heat_safety * weights["heat_safety"],
-        "drought_flood_safety": components.drought_flood_safety * weights["drought_flood_safety"],
-        "environmental_condition": components.environmental_condition * weights["environmental_condition"],
-    }
-    worst_key = min(contributions, key=lambda k: contributions[k])
-    return _COMPONENT_NAMES[worst_key]
+    losses = {key: (100 - getattr(components, key)) * weight
+              for key, weight in weights.items() if getattr(components, key) is not None}
+    return _COMPONENT_NAMES[max(losses, key=losses.get)] if losses else "missing evidence"
 
 
 def _build_reason(
@@ -395,51 +387,38 @@ def score(crop: CropRequirements, context: SnapshotContext) -> SimulationResult:
         falloff=12.0,
     )
     water_score = _range_score(
-        context.rainfall_total_mm,
+        context.rainfall_total_mm + context.irrigation_total_mm if context.rainfall_total_mm is not None else None,
         crop.min_rainfall_mm,
-        crop.min_rainfall_mm,   # optimum = midpoint of valid range
+        (crop.min_rainfall_mm + crop.max_rainfall_mm) / 2,   # optimum = midpoint of valid range
         crop.max_rainfall_mm,
         falloff=100.0,
     )
     soil_score = _soil_match(context.soil_ph, context.soil_clay_pct, crop)
     heat_score = _heat_safety(context.temperature_mean_c, crop.heat_tolerance_ceiling_c)
-    drought_score = _drought_safety(context.rainfall_total_mm, context.vpd_kpa, crop)
+    drought_score = _drought_safety(context.rainfall_total_mm + context.irrigation_total_mm if context.rainfall_total_mm is not None else None, context.vpd_kpa, crop)
     env_score = _ndvi_condition(context.ndvi_mean)
 
     components = ComponentScores(
-        temperature=_clamp(temp_score, 0.0, 100.0),
-        water=_clamp(water_score, 0.0, 100.0),
-        soil=_clamp(soil_score, 0.0, 100.0),
-        heat_safety=_clamp(heat_score, 0.0, 100.0),
-        drought_flood_safety=_clamp(drought_score, 0.0, 100.0),
-        environmental_condition=_clamp(env_score, 0.0, 100.0),
+        temperature=_clamp(temp_score, 0.0, 100.0) if context.temperature_mean_c is not None else None,
+        water=_clamp(water_score, 0.0, 100.0) if context.rainfall_total_mm is not None else None,
+        soil=_clamp(soil_score, 0.0, 100.0) if context.soil_ph is not None and context.soil_clay_pct is not None else None,
+        heat_safety=_clamp(heat_score, 0.0, 100.0) if context.temperature_mean_c is not None else None,
+        drought_flood_safety=_clamp(drought_score, 0.0, 100.0) if context.rainfall_total_mm is not None else None,
+        environmental_condition=_clamp(env_score, 0.0, 100.0) if context.ndvi_mean is not None else None,
     )
 
-    # --- Weighted sum (Requirement 3.2) ---
-    if hard_exclusion:
-        suitability_index = 0
-    else:
-        raw = (
-            components.temperature * weights["temperature"]
-            + components.water * weights["water"]
-            + components.soil * weights["soil"]
-            + components.heat_safety * weights["heat_safety"]
-            + components.drought_flood_safety * weights["drought_flood_safety"]
-            + components.environmental_condition * weights["environmental_condition"]
-        )
-        suitability_index = int(_clamp(round(raw), 0, 100))
-
-    # --- Metadata ---
+    supported = context.temperature_mean_c is not None and context.rainfall_total_mm is not None
+    available = {key: weight for key, weight in weights.items() if getattr(components, key) is not None}
+    suitability_index = None
+    if supported:
+        raw = sum(getattr(components, key) * weight for key, weight in available.items()) / sum(available.values())
+        suitability_index = 0 if hard_exclusion else int(_clamp(round(raw), 0, 100))
     limiting = _limiting_factor(components, weights)
-    qual_label = "Higher caution" if hard_exclusion else _label(suitability_index)
-    reason = _build_reason(
-        crop.name,
-        suitability_index,
-        qual_label,
-        limiting,
-        hard_exclusion,
-        hard_exclusion_reason,
-    )
+    qual_label = _label(suitability_index) if suitability_index is not None else "Insufficient evidence"
+    reason = (_build_reason(crop.name, suitability_index, qual_label, limiting, hard_exclusion, hard_exclusion_reason)
+              if suitability_index is not None else "A growing-period temperature and rainfall baseline is required before scoring this crop.")
+    if supported and len(available) < len(weights):
+        reason += " Partial assessment: unavailable components are excluded and remaining weights are normalized."
     completeness = _build_completeness(context)
 
     return SimulationResult(
@@ -472,5 +451,5 @@ def rank_all(context: SnapshotContext) -> list[SimulationResult]:
     Requirements: 4.1, 4.4
     """
     results = [score(crop, context) for crop in CROP_REGISTER]
-    results.sort(key=lambda r: (-r.suitability_index, r.crop_name))
+    results.sort(key=lambda r: (-(r.suitability_index if r.suitability_index is not None else -1), r.crop_name))
     return results

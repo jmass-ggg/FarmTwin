@@ -89,10 +89,13 @@ class Worker:
         session_factory = create_session_factory(engine)
 
         try:
-            async with aioredis.from_url(redis_url) as redis_client:
-                logger.info("worker.ready: waiting for jobs on '%s'.", REDIS_JOB_QUEUE_KEY)
-                while not self._shutdown:
-                    await self._poll_and_process(redis_client, session_factory)
+            logger.info("worker.ready: polling committed analysis jobs")
+            while not self._shutdown:
+                try:
+                    await self._poll_and_process(None, session_factory)
+                except Exception:
+                    logger.exception("worker.poll_error")
+                    await asyncio.sleep(5)
         finally:
             await engine.dispose()
             logger.info("worker.stopped: database pool disposed.")
@@ -101,71 +104,29 @@ class Worker:
     # Poll + process
     # ------------------------------------------------------------------
 
-    async def _poll_and_process(
-        self,
-        redis_client: aioredis.Redis,
-        session_factory,
-    ) -> None:
-        """Block on BLPOP for one job, then run it with retries."""
+    async def _poll_and_process(self, redis_client, session_factory) -> None:
+        """Poll committed jobs, including expired leases and retryable failures."""
+        from datetime import datetime, timezone
+        from sqlalchemy import select, or_
+        from app.models.snapshot import AnalysisJob, JobStatus
+        async with session_factory() as session:
+            ids = (await session.execute(select(AnalysisJob.id).where(
+                AnalysisJob.status.in_([JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.FAILED]),
+                AnalysisJob.attempts < 3,
+                or_(AnalysisJob.lease_until.is_(None), AnalysisJob.lease_until <= datetime.now(timezone.utc)),
+            ).order_by(AnalysisJob.created_at).limit(1))).scalars().all()
+        if not ids:
+            await asyncio.sleep(2)
+            return
+        await self._run_with_retry(ids[0], session_factory)
+
+    async def _run_with_retry(self, job_id, session_factory) -> None:
+        # Attempts and retry time live in the database and survive process restarts.
         try:
-            item = await redis_client.blpop(
-                REDIS_JOB_QUEUE_KEY, timeout=QUEUE_POLL_TIMEOUT_SECONDS
-            )
-        except Exception as exc:
-            logger.warning("worker.redis_error: %s; retrying after 5 s.", exc)
-            await asyncio.sleep(5)
-            return
-
-        if item is None:
-            # Timeout — loop back and check _shutdown flag
-            return
-
-        _key, raw = item
-        try:
-            payload = json.loads(raw)
-            job_id = uuid.UUID(payload["job_id"])
-        except (json.JSONDecodeError, KeyError, ValueError) as exc:
-            logger.error("worker.bad_payload: %s (raw=%r)", exc, raw)
-            return
-
-        await self._run_with_retry(job_id, session_factory)
-
-    async def _run_with_retry(
-        self,
-        job_id: uuid.UUID,
-        session_factory,
-    ) -> None:
-        """Run a job; retry up to MAX_RETRIES times with back-off."""
-        attempt = 0
-        while True:
-            attempt += 1
-            logger.info(
-                "worker.run: job=%s attempt=%d/%d",
-                job_id,
-                attempt,
-                MAX_RETRIES + 1,
-            )
-            try:
-                result = await run_analysis_job(job_id, self._settings, session_factory)
-                if result is not None:
-                    logger.info("worker.done: job=%s completed successfully.", job_id)
-                else:
-                    logger.error("worker.failed: job=%s returned None (failed).", job_id)
-                return
-            except Exception as exc:
-                logger.exception("worker.error: job=%s attempt=%d: %s", job_id, attempt, exc)
-                if attempt > MAX_RETRIES:
-                    logger.error(
-                        "worker.give_up: job=%s exhausted %d retries.", job_id, MAX_RETRIES
-                    )
-                    return
-                logger.info(
-                    "worker.retry: job=%s waiting %ds before retry %d.",
-                    job_id,
-                    RETRY_BACKOFF_SECONDS,
-                    attempt + 1,
-                )
-                await asyncio.sleep(RETRY_BACKOFF_SECONDS)
+            async with asyncio.timeout(540):
+                await run_analysis_job(job_id, self._settings, session_factory)
+        except Exception:
+            logger.exception("worker.job_error: job=%s; durable lease will allow recovery", job_id)
 
 
 # ---------------------------------------------------------------------------

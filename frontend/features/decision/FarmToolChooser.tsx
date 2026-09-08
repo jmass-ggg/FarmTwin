@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
+  CloudSun,
   FlaskConical,
   MapPinned,
   ShieldAlert,
@@ -32,12 +33,17 @@ const toolConfig = {
     route: 'crops',
     heading: 'Choose a farm to simulate crops',
   },
+  climate: {
+    Icon: CloudSun,
+    route: 'crops',
+    heading: 'Choose a farm to explore climate scenarios',
+  },
 } as const;
 
 export function FarmToolChooser({
   tool,
 }: {
-  tool: 'annual-plan' | 'disaster-center' | 'crop-simulator';
+  tool: 'annual-plan' | 'disaster-center' | 'crop-simulator' | 'climate';
 }) {
   const farms = useApiResource(farmTwinApi.listFarms);
   const { Icon, route, heading } = toolConfig[tool];

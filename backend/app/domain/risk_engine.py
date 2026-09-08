@@ -181,13 +181,13 @@ def _assess_drought(context: SnapshotContext) -> HazardAssessment:
     }
 
     # Requirement 2.5: missing rainfall → Unknown
-    if rainfall is None:
+    if rainfall is None or baseline is None or baseline <= 0:
         return HazardAssessment(
             hazard="drought",
             index=0,
             level=LEVEL_UNKNOWN,
             driver="rainfall_deficit",
-            explanation="Rainfall data is unavailable; drought assessment cannot be completed.",
+            explanation="Matched rainfall and baseline data are required; drought assessment cannot be completed.",
             horizon="seasonal",
             at_risk_crops=(),
             actions=(),
@@ -197,19 +197,7 @@ def _assess_drought(context: SnapshotContext) -> HazardAssessment:
             data_mode=context.data_mode,
         )
 
-    # Use baseline if available; otherwise treat demo rainfall as neutral (ratio = 1.0)
-    if baseline is not None and baseline > 0:
-        ratio = rainfall / baseline
-    else:
-        # For demonstration: rainfall_total_mm comes from demonstration profile;
-        # treat it as a moderate signal using a neutral reference
-        # Use the rainfall itself as a proxy: < 200 mm total over 4 months ~ medium
-        if rainfall < 200 * 0.60:
-            ratio = 0.50  # High
-        elif rainfall < 200 * 0.80:
-            ratio = 0.70  # Medium
-        else:
-            ratio = 0.90  # Low
+    ratio = rainfall / baseline
 
     drought_index = _clamp((1.0 - ratio) * 100, 0, 100)
 
@@ -234,7 +222,7 @@ def _assess_drought(context: SnapshotContext) -> HazardAssessment:
         driver = "rainfall_deficit"
 
     explanation = (
-        f"Rainfall is {rainfall:.0f} mm against an estimated seasonal baseline "
+        f"Rainfall is {rainfall:.0f} mm against an baseline for the same assessment period "
         f"(ratio {ratio:.2f}). "
         f"Primary driver: {driver.replace('_', ' ')}."
     )

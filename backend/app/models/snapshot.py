@@ -5,9 +5,11 @@ Requirements: 7.1, 7.2, 1.3
 """
 
 import uuid
+from datetime import datetime
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
+    DateTime,
     Enum,
     ForeignKey,
     Index,
@@ -42,6 +44,7 @@ class JobStatus(str, PyEnum):
 JobStatusType = Enum(
     JobStatus,
     native_enum=False,
+    values_callable=lambda enum: [item.value for item in enum],
     length=20,
     name="jobstatus",
 )
@@ -77,6 +80,9 @@ class AnalysisJob(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         default=JobStatus.QUEUED,
     )
+
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Per-stage progress: {stage_name: {status, started_at, completed_at}}
     stages: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
@@ -118,8 +124,7 @@ class AnalysisSnapshot(Base, UUIDMixin, CreatedAtMixin):
     privilege from the runtime role. No field may change after creation.
 
     Each snapshot is bound to a specific (farm_id, geometry_revision) pair.
-    The unique index on (farm_id, geometry_revision) ensures exactly one
-    snapshot per farm revision.
+    Multiple immutable snapshots may reference the same revision; each job produces at most one.
 
     Environmental payloads use a consistent provenance envelope per value:
     {
@@ -186,11 +191,8 @@ class AnalysisSnapshot(Base, UUIDMixin, CreatedAtMixin):
 
     __table_args__ = (
         # Unique snapshot per farm revision (latest wins at lookup time)
-        UniqueConstraint(
-            "farm_id",
-            "geometry_revision",
-            name="uq_analysis_snapshots_farm_revision",
-        ),
+        UniqueConstraint("job_id", name="uq_analysis_snapshots_job"),
+        Index("ix_analysis_snapshots_farm_revision_time", "farm_id", "geometry_revision", "created_at"),
         # GIN index for filtering/searching evidence statuses
         Index(
             "ix_analysis_snapshots_evidence_statuses",
