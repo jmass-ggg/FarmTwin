@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '@/components/api-state';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ScenarioControls } from '@/features/decision/ScenarioControls';
 import { CropCard } from '@/features/crops/CropCard';
 import { CropDetailPanel } from '@/features/crops/CropDetailPanel';
 import {
@@ -19,6 +20,11 @@ import {
   getCrops,
   simulateCrop,
 } from '@/lib/api/crops';
+import {
+  computeScenario,
+  type CropScenarioResult,
+  type HazardScenarioResult,
+} from '@/lib/api/scenarios';
 
 type CultivationMode = 'rain_fed' | 'irrigated';
 type Category = 'All' | 'cereal' | 'legume' | 'vegetable' | 'root';
@@ -61,6 +67,16 @@ export default function CropSimulatorPage() {
 
   // --- Crop register (for detail panel metadata) ---
   const [cropEntries, setCropEntries] = useState<CropEntry[]>([]);
+
+  // --- Scenario controls state ---
+  const [draftRainfall, setDraftRainfall] = useState(0);
+  const [draftTemperature, setDraftTemperature] = useState(0);
+  const [draftIrrigationMm, setDraftIrrigationMm] = useState('');
+  const [scenarioResult, setScenarioResult] = useState<{
+    crops: CropScenarioResult[];
+    hazards: HazardScenarioResult[];
+  } | null>(null);
+  const [scenarioBusy, setScenarioBusy] = useState(false);
 
   // --- Loading / error state ---
   const [loading, setLoading] = useState(true);
@@ -162,6 +178,38 @@ export default function CropSimulatorPage() {
   useEffect(() => {
     setSelectedResult(null);
   }, [plantingDate, cultivationMode, irrigationMm]);
+
+  // --- Scenario handlers ---
+  const handleScenarioApply = async () => {
+    if (!snapshotId) return; // no snapshot — controls should not be shown
+    const hasChanges =
+      draftRainfall !== 0 || draftTemperature !== 0 || draftIrrigationMm !== '';
+    if (!hasChanges) {
+      setScenarioResult(null);
+      return;
+    }
+    setScenarioBusy(true);
+    try {
+      const result = await computeScenario(farmId, 'Crop simulator scenario', {
+        rainfall_change_pct: draftRainfall,
+        temperature_change_c: draftTemperature,
+        irrigation_mm_override:
+          draftIrrigationMm !== '' ? parseFloat(draftIrrigationMm) : null,
+      });
+      setScenarioResult({ crops: result.crops, hazards: result.hazards });
+    } catch {
+      // fail silently — user can retry
+    } finally {
+      setScenarioBusy(false);
+    }
+  };
+
+  const handleScenarioReset = () => {
+    setDraftRainfall(0);
+    setDraftTemperature(0);
+    setDraftIrrigationMm('');
+    setScenarioResult(null);
+  };
 
   // --- Filtering ---
   const filteredResults = rankedResults.filter((r) => {
@@ -323,6 +371,21 @@ export default function CropSimulatorPage() {
         />
       </div>
 
+      {/* Scenario controls — only shown when snapshot is available (Req 4.4) */}
+      {snapshotId && (
+        <ScenarioControls
+          rainfall={draftRainfall}
+          temperature={draftTemperature}
+          irrigationMm={draftIrrigationMm}
+          busy={scenarioBusy}
+          onRainfallChange={setDraftRainfall}
+          onTemperatureChange={setDraftTemperature}
+          onIrrigationChange={setDraftIrrigationMm}
+          onApply={() => void handleScenarioApply()}
+          onReset={handleScenarioReset}
+        />
+      )}
+
       {/* Error states */}
       {error && (
         <ApiErrorState
@@ -400,6 +463,105 @@ export default function CropSimulatorPage() {
             </aside>
           )}
         </div>
+      )}
+
+      {/* Scenario comparison — shown after applying a real scenario (Req 2.3, 2.4) */}
+      {scenarioResult && (
+        <section
+          className="workspace-card comparison-card"
+          aria-labelledby="crop-scenario-comparison-title"
+        >
+          <div className="card-heading-row">
+            <div>
+              <p className="section-kicker">Scenario explorer</p>
+              <h2 id="crop-scenario-comparison-title">
+                Baseline vs scenario crop suitability
+              </h2>
+            </div>
+            <span>
+              {draftRainfall}% rain ·{' '}
+              {draftTemperature > 0 ? '+' : ''}
+              {draftTemperature}°C
+            </span>
+          </div>
+          <div className="comparison-table-wrap">
+            <table className="comparison-table">
+              <caption className="sr-only">
+                Baseline and climate scenario crop suitability scores for all 12 crops
+              </caption>
+              <thead>
+                <tr>
+                  <th>Crop</th>
+                  <th>Baseline</th>
+                  <th>Scenario</th>
+                  <th>Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scenarioResult.crops.map((item) => {
+                  const delta = item.scenario_index - item.baseline_index;
+                  return (
+                    <tr key={item.crop_name}>
+                      <td>{item.crop_name}</td>
+                      <td>
+                        {item.baseline_index}
+                        <small className="comparison-label"> {item.baseline_label}</small>
+                      </td>
+                      <td>
+                        {item.scenario_index}
+                        <small className="comparison-label"> {item.scenario_label}</small>
+                      </td>
+                      <td>
+                        <b
+                          data-direction={
+                            delta === 0 ? 'same' : delta > 0 ? 'up' : 'down'
+                          }
+                        >
+                          {delta > 0 ? '+' : ''}
+                          {delta}
+                        </b>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {scenarioResult.hazards.length > 0 && (
+            <div className="comparison-hazards">
+              <h3>Hazard levels</h3>
+              <table className="comparison-table">
+                <caption className="sr-only">
+                  Baseline and scenario hazard levels for all 5 hazards
+                </caption>
+                <thead>
+                  <tr>
+                    <th>Hazard</th>
+                    <th>Baseline</th>
+                    <th>Scenario</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scenarioResult.hazards.map((h) => (
+                    <tr key={h.hazard}>
+                      <td>{h.hazard}</td>
+                      <td>
+                        <span data-level={h.baseline_level.toLowerCase()}>
+                          {h.baseline_level}
+                        </span>
+                      </td>
+                      <td>
+                        <span data-level={h.scenario_level.toLowerCase()}>
+                          {h.scenario_level}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
     </div>
   );

@@ -1,16 +1,18 @@
 'use client';
 
-import { CloudRain, RotateCcw, ThermometerSun } from 'lucide-react';
+import { CloudRain, Droplets, RotateCcw, ThermometerSun } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 
-interface ScenarioControlsProps {
+export interface ScenarioControlsProps {
   rainfall: number;
   temperature: number;
+  irrigationMm?: string;
   busy?: boolean;
   onRainfallChange: (value: number) => void;
   onTemperatureChange: (value: number) => void;
+  onIrrigationChange?: (value: string) => void;
   onApply: () => void;
   onReset: () => void;
 }
@@ -18,14 +20,17 @@ interface ScenarioControlsProps {
 export function ScenarioControls({
   rainfall,
   temperature,
+  irrigationMm = '',
   busy,
   onRainfallChange,
   onTemperatureChange,
+  onIrrigationChange,
   onApply,
   onReset,
 }: ScenarioControlsProps) {
   const firstValue = (value: number | readonly number[]) =>
     typeof value === 'number' ? value : (value[0] ?? 0);
+
   return (
     <section
       className="workspace-card scenario-controls"
@@ -75,6 +80,29 @@ export function ScenarioControls({
           />
           <small>Cooler −5°C · Warmer +5°C</small>
         </div>
+        {onIrrigationChange !== undefined && (
+          <div className="scenario-input">
+            <label htmlFor="scenario-irrigation-mm">
+              <Droplets aria-hidden="true" /> Irrigation override{' '}
+              {irrigationMm ? (
+                <strong>{irrigationMm} mm</strong>
+              ) : (
+                <span className="scenario-input-hint">optional</span>
+              )}
+            </label>
+            <input
+              id="scenario-irrigation-mm"
+              type="number"
+              min="0"
+              step="10"
+              value={irrigationMm}
+              onChange={(e) => onIrrigationChange(e.target.value)}
+              placeholder="e.g. 200"
+              aria-label="Irrigation override in millimetres"
+            />
+            <small>Override irrigation applied to the scenario (mm)</small>
+          </div>
+        )}
       </div>
       <div className="scenario-actions">
         <Button onClick={onApply} disabled={busy} className="primary-button">

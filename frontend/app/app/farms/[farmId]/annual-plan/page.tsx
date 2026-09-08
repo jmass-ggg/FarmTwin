@@ -41,6 +41,11 @@ import {
   type PlanEntryCreate,
 } from '@/lib/api/planner';
 import { calculateDecisionSupport } from '@/lib/api/farms';
+import {
+  computeScenario,
+  type CropScenarioResult,
+  type HazardScenarioResult,
+} from '@/lib/api/scenarios';
 
 // ---------------------------------------------------------------------------
 // Add-to-plan form
@@ -399,9 +404,17 @@ export default function AnnualPlanPage() {
   const [month, setMonth] = useState(1);
   const [draftRainfall, setDraftRainfall] = useState(0);
   const [draftTemperature, setDraftTemperature] = useState(0);
+  const [draftIrrigationMm, setDraftIrrigationMm] = useState('');
   const [scenario, setScenario] = useState({ rainfall: 0, temperature: 0 });
   const [addToPlanOpen, setAddToPlanOpen] = useState(false);
   const [addToPlanCrop, setAddToPlanCrop] = useState<{ name: string; monthNumber: number; monthName: string } | null>(null);
+
+  // Real scenario results (populated when snapshot is available)
+  const [scenarioResult, setScenarioResult] = useState<{
+    crops: CropScenarioResult[];
+    hazards: HazardScenarioResult[];
+  } | null>(null);
+  const [scenarioBusy, setScenarioBusy] = useState(false);
 
   const plan = useQuery({
     queryKey: [
@@ -440,12 +453,47 @@ export default function AnnualPlanPage() {
     }),
   );
 
-  const apply = () =>
-    setScenario({ rainfall: draftRainfall, temperature: draftTemperature });
+  // Derive snapshotId from the decision-support response data_mode
+  // (data_mode !== 'demonstration' means a snapshot is backing the response)
+  const snapshotId =
+    plan.data && plan.data.data_mode !== 'demonstration'
+      ? (plan.data as { snapshot_id?: string }).snapshot_id ?? null
+      : null;
+
+  const apply = async () => {
+    const hasChanges =
+      draftRainfall !== 0 || draftTemperature !== 0 || draftIrrigationMm !== '';
+
+    if (snapshotId && hasChanges) {
+      // Use real scenario API when a snapshot backs the response
+      setScenarioBusy(true);
+      try {
+        const result = await computeScenario(farmId, 'Planner scenario', {
+          rainfall_change_pct: draftRainfall,
+          temperature_change_c: draftTemperature,
+          irrigation_mm_override: draftIrrigationMm !== '' ? parseFloat(draftIrrigationMm) : null,
+        });
+        setScenarioResult({ crops: result.crops, hazards: result.hazards });
+        setScenario({ rainfall: draftRainfall, temperature: draftTemperature });
+      } catch {
+        // fall through to demo engine on error
+        setScenario({ rainfall: draftRainfall, temperature: draftTemperature });
+      } finally {
+        setScenarioBusy(false);
+      }
+    } else {
+      // Demo engine path — just pass params to decision-support query
+      setScenarioResult(null);
+      setScenario({ rainfall: draftRainfall, temperature: draftTemperature });
+    }
+  };
+
   const reset = () => {
     setDraftRainfall(0);
     setDraftTemperature(0);
+    setDraftIrrigationMm('');
     setScenario({ rainfall: 0, temperature: 0 });
+    setScenarioResult(null);
   };
 
   const openAddToPlan = (cropName: string, monthNumber: number, monthName: string) => {
@@ -501,10 +549,12 @@ export default function AnnualPlanPage() {
           <ScenarioControls
             rainfall={draftRainfall}
             temperature={draftTemperature}
-            busy={plan.isFetching}
+            irrigationMm={draftIrrigationMm}
+            busy={plan.isFetching || scenarioBusy}
             onRainfallChange={setDraftRainfall}
             onTemperatureChange={setDraftTemperature}
-            onApply={apply}
+            onIrrigationChange={setDraftIrrigationMm}
+            onApply={() => void apply()}
             onReset={reset}
           />
 
@@ -711,30 +761,91 @@ export default function AnnualPlanPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {plan.data.comparison.map((item) => (
-                    <tr key={item.crop}>
-                      <td>{item.crop}</td>
-                      <td>{item.baseline_score}</td>
-                      <td>{item.scenario_score}</td>
-                      <td>
-                        <b
-                          data-direction={
-                            item.delta === 0
-                              ? 'same'
-                              : item.delta > 0
-                                ? 'up'
-                                : 'down'
-                          }
-                        >
-                          {item.delta > 0 ? '+' : ''}
-                          {item.delta}
-                        </b>
-                      </td>
-                    </tr>
-                  ))}
+                  {scenarioResult
+                    ? scenarioResult.crops.map((item) => {
+                        const delta = item.scenario_index - item.baseline_index;
+                        return (
+                          <tr key={item.crop_name}>
+                            <td>{item.crop_name}</td>
+                            <td>
+                              {item.baseline_index}
+                              <small className="comparison-label"> {item.baseline_label}</small>
+                            </td>
+                            <td>
+                              {item.scenario_index}
+                              <small className="comparison-label"> {item.scenario_label}</small>
+                            </td>
+                            <td>
+                              <b
+                                data-direction={
+                                  delta === 0 ? 'same' : delta > 0 ? 'up' : 'down'
+                                }
+                              >
+                                {delta > 0 ? '+' : ''}
+                                {delta}
+                              </b>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    : plan.data.comparison.map((item) => (
+                        <tr key={item.crop}>
+                          <td>{item.crop}</td>
+                          <td>{item.baseline_score}</td>
+                          <td>{item.scenario_score}</td>
+                          <td>
+                            <b
+                              data-direction={
+                                item.delta === 0
+                                  ? 'same'
+                                  : item.delta > 0
+                                    ? 'up'
+                                    : 'down'
+                              }
+                            >
+                              {item.delta > 0 ? '+' : ''}
+                              {item.delta}
+                            </b>
+                          </td>
+                        </tr>
+                      ))}
                 </tbody>
               </table>
             </div>
+            {scenarioResult && scenarioResult.hazards.length > 0 && (
+              <div className="comparison-hazards">
+                <h3>Hazard levels</h3>
+                <table className="comparison-table">
+                  <caption className="sr-only">
+                    Baseline and scenario hazard levels
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th>Hazard</th>
+                      <th>Baseline</th>
+                      <th>Scenario</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scenarioResult.hazards.map((h) => (
+                      <tr key={h.hazard}>
+                        <td>{h.hazard}</td>
+                        <td>
+                          <span data-level={h.baseline_level.toLowerCase()}>
+                            {h.baseline_level}
+                          </span>
+                        </td>
+                        <td>
+                          <span data-level={h.scenario_level.toLowerCase()}>
+                            {h.scenario_level}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           <details className="assumptions-card">
