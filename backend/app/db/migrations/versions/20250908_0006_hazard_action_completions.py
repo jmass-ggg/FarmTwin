@@ -94,13 +94,13 @@ def upgrade() -> None:
     #   - UPDATE: idempotent upsert (ON CONFLICT DO UPDATE) updates completed_at
     op.execute(
         f"""
-        DO $
+        DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{RUNTIME_ROLE}') THEN
                 GRANT SELECT, INSERT, UPDATE ON action_completions TO {RUNTIME_ROLE};
             END IF;
         END
-        $;
+        $$;
         """
     )
 

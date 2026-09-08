@@ -414,6 +414,14 @@ async def test_committed_farm_remains_available_after_application_restart(monkey
         async with engine.begin() as connection:
             # Reset every mapped table so newer migrations cannot leave schema
             # objects behind when this lifecycle test runs in the full suite.
+            # Drop tables with circular FKs explicitly first using CASCADE,
+            # then let SQLAlchemy drop the rest in dependency order.
+            for statement in (
+                "DROP TABLE IF EXISTS action_completions CASCADE",
+                "DROP TABLE IF EXISTS analysis_snapshots CASCADE",
+                "DROP TABLE IF EXISTS analysis_jobs CASCADE",
+            ):
+                await connection.execute(text(statement))
             await connection.run_sync(Base.metadata.drop_all)
             for statement in (
                 "DROP TABLE IF EXISTS farm_geometry_revisions CASCADE",
