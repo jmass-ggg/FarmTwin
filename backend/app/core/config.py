@@ -334,12 +334,6 @@ class Settings(BaseSettings):
                     f"got {self.environment.value}"
                 )
 
-            # Must be non-live data mode
-            if self.data_mode == DataMode.LIVE:
-                errors.append(
-                    f"LOCAL_DEMO requires non-live DATA_MODE, got {self.data_mode.value}"
-                )
-
             # Must have local_only enabled
             if not self.demo.local_only:
                 errors.append("LOCAL_DEMO requires DEMO__LOCAL_ONLY=true")

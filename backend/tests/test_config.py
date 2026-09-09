@@ -299,11 +299,9 @@ def test_demo_requires_development_environment():
     assert "development" in str(exc_info.value).lower()
 
 
-def test_demo_requires_non_live_data_mode():
-    with pytest.raises(ValidationError) as exc_info:
-        Settings(**_demo_dev(data_mode="live"))
-    error_str = str(exc_info.value).lower()
-    assert "live" in error_str or "data_mode" in error_str
+def test_local_auth_and_data_mode_are_independent():
+    config = Settings(**_demo_dev(data_mode="live"))
+    assert config.data_mode == DataMode.LIVE
 
 
 def test_demo_requires_local_only():

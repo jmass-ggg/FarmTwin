@@ -12,7 +12,7 @@ The command:
 - Creates the fixed demo user with reserved identity
 - Seeds labeled historical/synthetic farm fixtures (optional)
 - Is idempotent (can be run multiple times safely)
-- Refuses authenticated/live databases
+- Refuses authenticated or non-local databases
 - Preserves fixture timestamps
 - Avoids production migration seeds
 
@@ -32,7 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.core.config import AuthMode, DataMode, Environment, Settings
+from app.core.config import AuthMode, Environment, Settings
 from app.core.database import create_engine
 from app.core.security import DEMO_ISSUER, DEMO_SUBJECT, DEMO_USER_UUID
 from app.models.farm import Farm, FarmGeometryRevision
@@ -280,12 +280,6 @@ async def setup_demo_database(
         raise RuntimeError(
             f"Demo setup requires ENVIRONMENT=development, "
             f"got {settings.environment.value}"
-        )
-    
-    if settings.data_mode == DataMode.LIVE:
-        raise RuntimeError(
-            f"Demo setup requires non-live DATA_MODE, "
-            f"got {settings.data_mode.value}"
         )
     
     if not settings.demo.local_only:

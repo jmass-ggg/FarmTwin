@@ -51,15 +51,21 @@ export default function NewFarmPage() {
       <header className="editor-page-heading">
         <div>
           <p className="section-kicker">Create farm</p>
-          <h1>Mark your farm boundary</h1>
-          <p>Search for your land, draw at least three points, then close and save the boundary.</p>
+          <h1>Create your farm</h1>
+          <p>Name the farm, find its location, then click the map to mark at least three boundary corners.</p>
         </div>
         <FarmNameInput value={name} onChange={(value) => { setName(value); setNameError(null); }} error={nameError} />
       </header>
+      <ol className="farm-create-steps" aria-label="Farm creation steps">
+        <li data-current><span>1</span> Locate your land</li>
+        <li><span>2</span> Draw the boundary</li>
+        <li><span>3</span> Confirm and analyse</li>
+      </ol>
       <MapEditor
         canSave={Boolean(name.trim())}
         isSaving={saving}
         apiError={geometryError}
+        requireBoundaryConfirmation
         onSave={save}
       />
     </div>

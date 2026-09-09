@@ -82,6 +82,10 @@ def _settings_historical() -> Settings:
     env_path = Path(__file__).parent.parent / ".env"
     return Settings(_env_file=str(env_path), data_mode="historical_replay")
 
+def _settings_live() -> Settings:
+    env_path = Path(__file__).parent.parent / ".env"
+    return Settings(_env_file=str(env_path), data_mode="live")
+
 
 # ---------------------------------------------------------------------------
 # DB helpers
@@ -303,7 +307,7 @@ async def test_full_integration_farm_to_snapshot(session_factory):
     assert job.status == JobStatus.QUEUED
     assert job.farm_id == farm_id
 
-    settings = _settings_historical()
+    settings = _settings_live()
 
     # Mock all external provider HTTP calls
     with (
@@ -641,9 +645,8 @@ async def test_job_status_completed_after_successful_run(session_factory):
 
 
 @pytest.mark.asyncio
-async def test_second_job_same_revision_handled_gracefully(session_factory):
-    """Running a second job for the same (farm_id, geometry_revision) does not
-    corrupt data — the unique constraint may prevent a second snapshot row.
+async def test_second_job_same_revision_preserves_snapshot_history(session_factory):
+    """Running a second job for the same revision keeps both immutable snapshots.
 
     Requirements: 7.1, 7.2
     """
@@ -674,12 +677,13 @@ async def test_second_job_same_revision_handled_gracefully(session_factory):
         await session.commit()
     job_id_2 = job2.id
 
-    # Second run may fail due to unique constraint on (farm_id, geometry_revision)
-    # That is acceptable — snapshot data must not be corrupted
+    # A repeat analysis creates a new dated snapshot without changing the first.
     with _run_mocked()[0], _run_mocked()[1], _run_mocked()[2], _run_mocked()[3], _run_mocked()[4]:
         snap2 = await run_analysis_job(job_id_2, settings, session_factory)
 
-    # Only one snapshot row must exist for (farm_id, revision=1)
+    assert snap2 is not None
+
+    # Both immutable analyses remain available for audit and comparison.
     async with session_factory() as session:
         count = await session.scalar(
             select(func.count()).select_from(AnalysisSnapshot).where(
@@ -687,4 +691,5 @@ async def test_second_job_same_revision_handled_gracefully(session_factory):
                 AnalysisSnapshot.geometry_revision == 1,
             )
         )
-    assert count == 1, "Unique constraint: exactly one snapshot per (farm_id, geometry_revision)"
+    assert count == 2
+    assert snap2.id != snap1.id

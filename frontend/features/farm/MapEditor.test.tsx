@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import Link from 'next/link';
 
 import { MapEditor } from './MapEditor';
 
@@ -67,9 +68,22 @@ describe('MapEditor', () => {
     expect(screen.getByRole('button', { name: 'Save farm' })).toBeEnabled();
   });
 
+  it('requires land confirmation before creating a farm', async () => {
+    render(<MapEditor requireBoundaryConfirmation onSave={vi.fn()} />);
+    await importBoundary(valid);
+    const save = screen.getByRole('button', { name: 'Save farm' });
+    expect(save).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'I confirm this boundary represents land I own or manage.',
+      }),
+    );
+    expect(save).toBeEnabled();
+  });
+
   it('guards navigation when a draft has unsaved changes', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    render(<><MapEditor onSave={vi.fn()} /><a href="/app">Leave editor</a></>);
+    render(<><MapEditor onSave={vi.fn()} /><Link href="/app">Leave editor</Link></>);
     await userEvent.click(screen.getByRole('button', { name: 'Draw boundary' }));
     fireEvent.click(screen.getByRole('link', { name: 'Leave editor' }));
     await waitFor(() => expect(confirm).toHaveBeenCalled());
@@ -81,10 +95,10 @@ describe('MapEditor', () => {
     expect(screen.getByLabelText('Interactive farm boundary map')).toBeInTheDocument();
   });
 
-  it('shows a drawable OpenStreetMap fallback when WebGL is unavailable', () => {
+  it('shows a drawable OpenStreetMap fallback when WebGL is unavailable', async () => {
     mapShouldFail = true;
     render(<MapEditor onSave={vi.fn()} />);
-    expect(screen.getByTitle('OpenStreetMap farm boundary map')).toBeInTheDocument();
+    expect(await screen.findByTitle('OpenStreetMap farm boundary map')).toBeInTheDocument();
     expect(screen.getByLabelText('Farm boundary drawing surface')).toBeInTheDocument();
   });
 });

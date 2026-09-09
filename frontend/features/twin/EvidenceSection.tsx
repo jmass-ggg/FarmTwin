@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 import type { EnvironmentalValue } from '@/lib/api/farms';
 
-type EvidenceStatus = 'accepted' | 'stale' | 'unavailable' | 'error' | 'ineligible' | string;
+type EvidenceStatus = string;
 
 interface EvidenceSectionProps {
   title: string;
@@ -29,7 +29,8 @@ function statusLabel(status: EvidenceStatus): string {
   return status;
 }
 
-function formatAcquiredAt(iso: string): string {
+function formatAcquiredAt(iso: string | null): string {
+  if (!iso) return '—';
   try {
     return new Date(iso).toLocaleString(undefined, {
       dateStyle: 'medium',

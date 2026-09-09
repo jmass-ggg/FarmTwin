@@ -255,19 +255,17 @@ def test_setup_demo_database_refuses_wrong_environment():
         )
 
 
-def test_setup_demo_database_refuses_live_data_mode():
-    """Test that config validation rejects live data mode for demo"""
-    # Settings validation should reject this at config level
-    from pydantic import ValidationError
-    with pytest.raises(ValidationError, match="LOCAL_DEMO requires non-live DATA_MODE"):
-        Settings(
-            _env_file=None,
-            environment="development",
-            data_mode="live",  # Wrong mode
-            auth={"mode": "local_demo"},
-            demo={"local_only": True, "isolated_database": True},
-            database={"host": "localhost", "name": "farmtwin_demo", "user": "demo_user", "password": "demo_pass"},
-        )
+def test_local_authentication_allows_live_environmental_data():
+    """Local development auth does not force the use of fixture data."""
+    settings = Settings(
+        _env_file=None,
+        environment="development",
+        data_mode="live",
+        auth={"mode": "local_demo"},
+        demo={"local_only": True, "isolated_database": True},
+        database={"host": "localhost", "name": "farmtwin_demo", "user": "demo_user", "password": "demo_pass"},
+    )
+    assert settings.data_mode == DataMode.LIVE
 
 
 def test_setup_demo_database_requires_local_only():

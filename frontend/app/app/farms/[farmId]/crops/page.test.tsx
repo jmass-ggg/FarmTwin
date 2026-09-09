@@ -188,7 +188,7 @@ describe('CropSimulatorPage', () => {
     await waitFor(() => expect(screen.getByText('Maize')).toBeInTheDocument());
 
     // The crop card should show "Not suitable" text
-    const card = screen.getByText('Maize').closest('[role="button"]')!;
+    const card = screen.getByText('Maize').closest<HTMLElement>('[role="button"]')!;
     expect(within(card).getByText(/Not suitable/)).toBeInTheDocument();
 
     // Click the card to open detail panel
@@ -273,7 +273,11 @@ describe('CropSimulatorPage', () => {
     simulateCrop.mockRejectedValue(
       new CropValidationError(
         'Required scoring inputs are absent and no fallback is available.',
-        [{ field: 'body.planting_date', message: 'Planting date is required' }],
+        [{
+          field: 'body.planting_date',
+          code: 'INSUFFICIENT_EVIDENCE',
+          message: 'Planting date is required',
+        }],
         'req-xyz',
       ),
     );

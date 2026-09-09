@@ -374,7 +374,7 @@ async def _get_demo_principal(session: AsyncSession, settings: Settings) -> Prin
     
     Validates complete demo policy:
     - Development environment
-    - Non-live data mode
+    - Explicit data mode, independent from the local authentication method
     - Local-only deployment
     - Isolated demo database
     - Correct installation marker

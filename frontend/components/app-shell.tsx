@@ -28,45 +28,6 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 
-const primaryNavigation = [
-  { href: '/app', label: 'Overview', icon: Home, available: true, comingSoon: undefined },
-  {
-    href: '/app/tools/digital-twin',
-    label: 'Farm Digital Twin',
-    icon: Map,
-    available: false,
-    comingSoon: 'Phase 5 — standalone page not yet built',
-  },
-  {
-    href: '/app/tools/crop-simulator',
-    label: 'Crop Simulator',
-    icon: FlaskConical,
-    available: true,
-    comingSoon: undefined,
-  },
-  {
-    href: '/app/tools/annual-plan',
-    label: 'Annual Crop Plan',
-    icon: CalendarDays,
-    available: true,
-    comingSoon: undefined,
-  },
-  {
-    href: '/app/tools/disaster-center',
-    label: 'Climate Risk Center',
-    icon: ShieldAlert,
-    available: true,
-    comingSoon: undefined,
-  },
-  {
-    href: '/app/tools/climate',
-    label: 'Climate Scenarios',
-    icon: CloudSun,
-    available: false,
-    comingSoon: 'Scenarios available inside Crop Simulator and Annual Plan',
-  },
-];
-
 const secondaryNavigation = [
   { href: '/app/data-sources', label: 'Data Sources', icon: Database },
   { href: '/app/settings', label: 'Settings', icon: Settings },
@@ -75,11 +36,21 @@ const secondaryNavigation = [
 
 function Navigation({ close }: { close?: () => void }) {
   const pathname = usePathname();
+  const farmId = pathname.match(/^\/app\/farms\/([^/]+)/)?.[1];
+  const farmBase = farmId ? `/app/farms/${farmId}` : null;
+  const primaryNavigation = [
+    { href: '/app', label: 'Overview', icon: Home, available: true },
+    { href: farmBase ? `${farmBase}/twin` : '#', label: 'Farm Digital Twin', icon: Map, available: Boolean(farmBase) },
+    { href: farmBase ? `${farmBase}/crops` : '#', label: 'Crop Simulator', icon: FlaskConical, available: Boolean(farmBase) },
+    { href: farmBase ? `${farmBase}/annual-plan` : '#', label: 'Annual Crop Plan', icon: CalendarDays, available: Boolean(farmBase) },
+    { href: farmBase ? `${farmBase}/risks` : '#', label: 'Disaster Center', icon: ShieldAlert, available: Boolean(farmBase) },
+    { href: farmBase ? `${farmBase}/twin#climate` : '#', label: 'Climate', icon: CloudSun, available: Boolean(farmBase) },
+  ];
   return (
     <nav className="app-navigation" aria-label="Workspace navigation">
       <div className="nav-group">
         <p className="nav-label">Workspace</p>
-        {primaryNavigation.map(({ href, label, icon: Icon, available, comingSoon }) => {
+        {primaryNavigation.map(({ href, label, icon: Icon, available }) => {
           const active =
             href === '/app'
               ? pathname === href
@@ -92,29 +63,18 @@ function Navigation({ close }: { close?: () => void }) {
                   pathname.includes('/crops'));
           if (!available) {
             return (
-              <Link
-                key={href}
-                href={href}
-                onClick={close}
+              <span
+                key={label}
                 className="nav-item nav-item-unavailable"
-                data-active={active || undefined}
-                aria-current={active ? 'page' : undefined}
-                aria-describedby={`nav-unavailable-${href.split('/').pop()}`}
+                aria-disabled="true"
               >
                 <Icon aria-hidden="true" />
                 <span className="nav-item-text">
                   {label}
-                  {comingSoon && (
-                    <small
-                      id={`nav-unavailable-${href.split('/').pop()}`}
-                      className="nav-coming-soon"
-                    >
-                      {comingSoon}
-                    </small>
-                  )}
+                  <small className="nav-coming-soon">Select a farm first</small>
                 </span>
-                <LockKeyhole className="nav-lock" aria-label="Not yet implemented" />
-              </Link>
+                <LockKeyhole className="nav-lock" aria-label="Select a farm first" />
+              </span>
             );
           }
           return (
@@ -165,13 +125,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <Navigation />
         <div className="sidebar-foot">
-          <span className="demo-badge">
-            <span aria-hidden="true" /> Preview · non-live
-          </span>
-          <p>
-            Planner and risk outputs are demonstration indices until live
-            evidence is connected.
-          </p>
+          <div className="sidebar-foot-brand">
+            <p>Better decisions</p>
+            <p>Healthier farms</p>
+            <p>Greener Kenya</p>
+          </div>
         </div>
       </aside>
 
@@ -180,13 +138,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mobile-brand">
             <Brand />
           </div>
-          <div className="workspace-context">
-            <p>FarmTwin workspace</p>
-            <span>No farm selected</span>
-          </div>
-          <span className="demo-badge app-demo-badge">
-            <span aria-hidden="true" /> Demonstration mode
-          </span>
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger
               render={

@@ -11,13 +11,17 @@ import {
   Save,
   Undo2,
 } from 'lucide-react';
-import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl';
+import maplibregl, {
+  type GeoJSONSource,
+  type Map as MapLibreMap,
+} from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type { GeoJSONPolygon } from '@/lib/api/farms';
+import { createFarmMapStyle } from '@/lib/map-style';
 
 type Position = [number, number];
 type MapMode = 'loading' | 'interactive' | 'fallback';
@@ -128,6 +132,22 @@ function lineFeature(coordinates: Position[]) {
     : { type: 'FeatureCollection' as const, features: [] };
 }
 
+function pointFeatures(coordinates: Position[], closed: boolean) {
+  const visible = closed ? coordinates.slice(0, -1) : coordinates;
+  return {
+    type: 'FeatureCollection' as const,
+    features: visible.map((coordinate, index) => ({
+      type: 'Feature' as const,
+      properties: { index },
+      geometry: { type: 'Point' as const, coordinates: coordinate },
+    })),
+  };
+}
+
+function setMapCursor(map: MapLibreMap, cursor: string) {
+  map.getCanvas?.().style.setProperty('cursor', cursor);
+}
+
 function parseImportedGeometry(value: string): GeoJSONPolygon {
   const parsed: unknown = JSON.parse(value);
   const candidate = Array.isArray(parsed)
@@ -161,6 +181,7 @@ interface MapEditorProps {
   canSave?: boolean;
   hasExternalChanges?: boolean;
   apiError?: string | null;
+  requireBoundaryConfirmation?: boolean;
   onSave: (geometry: GeoJSONPolygon) => Promise<void> | void;
 }
 
@@ -170,6 +191,7 @@ export function MapEditor({
   canSave = true,
   hasExternalChanges = false,
   apiError,
+  requireBoundaryConfirmation = false,
   onSave,
 }: MapEditorProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -183,7 +205,11 @@ export function MapEditor({
   const [importError, setImportError] = useState<string | null>(null);
   const [locationQuery, setLocationQuery] = useState('');
   const [locationStatus, setLocationStatus] = useState<string | null>(null);
-  const initialCenter = (initialGeometry?.coordinates[0]?.[0] ?? [36.8219, -1.2921]) as Position;
+  const [boundaryConfirmed, setBoundaryConfirmed] = useState(false);
+  const initialCenter = useMemo(
+    () => (initialGeometry?.coordinates[0]?.[0] ?? [36.8219, -1.2921]) as Position,
+    [initialGeometry],
+  );
   const [mapMode, setMapMode] = useState<MapMode>('loading');
   const [fallbackCenter, setFallbackCenter] = useState<Position>(initialCenter);
   const [fallbackZoom, setFallbackZoom] = useState(initialGeometry ? 14 : 10);
@@ -215,30 +241,29 @@ export function MapEditor({
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
     let map: MapLibreMap | null = null;
-    let loadTimer: number | undefined;
     try {
       map = new maplibregl.Map({
         container: mapContainerRef.current,
-        style: 'https://tiles.openfreemap.org/styles/liberty',
+        style: createFarmMapStyle('street'),
         center: initialCenter,
         zoom: initialGeometry ? 14 : 10,
         attributionControl: false,
       });
     } catch {
-      setMapMode('fallback');
+      queueMicrotask(() => setMapMode('fallback'));
       return;
     }
-    loadTimer = window.setTimeout(() => setMapMode('fallback'), 5000);
+    const loadTimer = window.setTimeout(() => setMapMode('fallback'), 8000);
     map.addControl(
       new maplibregl.AttributionControl({
         compact: true,
-        customAttribution: 'Map © OpenStreetMap contributors · OpenFreeMap',
+        customAttribution: 'Map © OpenStreetMap contributors',
       }),
     );
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.doubleClickZoom.disable();
     map.on('load', () => {
-      if (loadTimer) window.clearTimeout(loadTimer);
+      window.clearTimeout(loadTimer);
       setMapMode('interactive');
       map.addSource('saved-boundary', { type: 'geojson', data: asFeature(initialGeometry ?? null) });
       map.addLayer({
@@ -263,6 +288,27 @@ export function MapEditor({
         id: 'draft-preview-line', type: 'line', source: 'draft-preview',
         paint: { 'line-color': '#d97706', 'line-width': 3, 'line-dasharray': [1.5, 1.5] },
       });
+      map.addSource('draft-vertices', {
+        type: 'geojson',
+        data: pointFeatures(coordinatesRef.current, closedRef.current),
+      });
+      map.addLayer({
+        id: 'draft-vertices',
+        type: 'circle',
+        source: 'draft-vertices',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#fff7e6',
+          'circle-stroke-color': '#b85f00',
+          'circle-stroke-width': 3,
+        },
+      });
+      setMapCursor(map, closedRef.current ? 'grab' : 'crosshair');
+    });
+    map.on('error', (event) => {
+      // A style can report loaded even when its raster source is blocked. Move
+      // to the compatibility map instead of leaving a featureless green box.
+      if (event.error) setMapMode('fallback');
     });
     map.on('click', (event) => {
       if (closedRef.current) return;
@@ -272,11 +318,11 @@ export function MapEditor({
     map.on('dblclick', finishDrawing);
     mapRef.current = map;
     return () => {
-      if (loadTimer) window.clearTimeout(loadTimer);
+      window.clearTimeout(loadTimer);
       map.remove();
       mapRef.current = null;
     };
-  }, [finishDrawing, initialGeometry]);
+  }, [finishDrawing, initialCenter, initialGeometry]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -285,13 +331,16 @@ export function MapEditor({
     (map.getSource('draft-preview') as GeoJSONSource | undefined)?.setData(
       closed ? lineFeature([]) : lineFeature(coordinates),
     );
+    (map.getSource('draft-vertices') as GeoJSONSource | undefined)?.setData(
+      pointFeatures(coordinates, closed),
+    );
+    setMapCursor(map, closed ? 'grab' : 'crosshair');
   }, [closed, coordinates, draftGeometry]);
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
     const beforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
-      event.returnValue = '';
     };
     const guardLink = (event: MouseEvent) => {
       const target = event.target as Element | null;
@@ -315,6 +364,7 @@ export function MapEditor({
     setClosed(false);
     setDirty(true);
     setImportError(null);
+    setBoundaryConfirmed(false);
   };
 
   const undo = () => {
@@ -325,6 +375,7 @@ export function MapEditor({
       setCoordinates((current) => current.slice(0, -1));
     }
     setDirty(true);
+    setBoundaryConfirmed(false);
   };
 
   const applyImport = (value: string) => {
@@ -334,6 +385,7 @@ export function MapEditor({
       setClosed(true);
       setDirty(true);
       setImportError(null);
+      setBoundaryConfirmed(false);
       const first = geometry.coordinates[0][0];
       setFallbackCenter(first as Position);
       setFallbackZoom(14);
@@ -373,7 +425,7 @@ export function MapEditor({
     }
   };
 
-  const addFallbackVertex = (event: React.MouseEvent<SVGSVGElement>) => {
+  const addFallbackVertex = (event: React.MouseEvent<HTMLButtonElement>) => {
     if (closedRef.current) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const centerPoint = mercatorPoint(fallbackCenter, fallbackZoom);
@@ -407,13 +459,13 @@ export function MapEditor({
             <LocateFixed /> Find
           </Button>
         </div>
-        {locationStatus && <p className="map-helper-text" role="status">{locationStatus}</p>}
+        {locationStatus && <output className="map-helper-text">{locationStatus}</output>}
       </div>
 
       <div className="map-workspace">
         <div className="map-canvas" ref={mapContainerRef} aria-label="Interactive farm boundary map" />
         {mapMode === 'loading' && (
-          <div className="map-loading" role="status">Loading map…</div>
+          <output className="map-loading">Loading map…</output>
         )}
         {mapMode === 'fallback' && (
           <div className="fallback-map" data-testid="fallback-map">
@@ -422,30 +474,47 @@ export function MapEditor({
               title="OpenStreetMap farm boundary map"
               loading="eager"
             />
-            <svg
-              viewBox="0 0 1200 560"
-              preserveAspectRatio="none"
+            <button
+              type="button"
+              className="fallback-drawing-surface"
               aria-label="Farm boundary drawing surface"
               onClick={addFallbackVertex}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !closedRef.current) {
+                  setCoordinates((current) => [...current, fallbackCenter]);
+                  setDirty(true);
+                }
+              }}
             >
-              {closed && fallbackPoints && <polygon points={fallbackPoints} />}
-              {!closed && fallbackPoints && <polyline points={fallbackPoints} />}
-              {coordinates.map((coordinate, index) => {
-                const centerPoint = mercatorPoint(fallbackCenter, fallbackZoom);
-                const point = mercatorPoint(coordinate, fallbackZoom);
-                return (
-                  <circle
-                    key={`${coordinate[0]}-${coordinate[1]}-${index}`}
-                    cx={point[0] - centerPoint[0] + 600}
-                    cy={point[1] - centerPoint[1] + 280}
-                    r="6"
-                  />
-                );
-              })}
-            </svg>
+              <svg viewBox="0 0 1200 560" preserveAspectRatio="none" aria-hidden="true">
+                {closed && fallbackPoints && <polygon points={fallbackPoints} />}
+                {!closed && fallbackPoints && <polyline points={fallbackPoints} />}
+                {coordinates.map((coordinate, index) => {
+                  const centerPoint = mercatorPoint(fallbackCenter, fallbackZoom);
+                  const point = mercatorPoint(coordinate, fallbackZoom);
+                  return (
+                    <circle
+                      key={`${coordinate[0]}-${coordinate[1]}-${index}`}
+                      cx={point[0] - centerPoint[0] + 600}
+                      cy={point[1] - centerPoint[1] + 280}
+                      r="6"
+                    />
+                  );
+                })}
+              </svg>
+            </button>
             <span className="fallback-map-note">Compatibility map · click to add boundary points</span>
           </div>
         )}
+        <output className="map-drawing-hint">
+          {closed
+            ? 'Boundary closed · use Undo to edit it'
+            : coordinates.length === 0
+              ? 'Click the map to place the first corner'
+              : coordinates.length < 3
+                ? `Place ${3 - coordinates.length} more ${coordinates.length === 2 ? 'corner' : 'corners'}`
+                : 'Click Close ring, or double-click the map to finish'}
+        </output>
         <div className="drawing-controls" aria-label="Drawing controls">
           <Button type="button" onClick={startDrawing}><RotateCcw /> Draw boundary</Button>
           <Button type="button" variant="outline" onClick={undo} disabled={coordinates.length === 0}>
@@ -466,7 +535,7 @@ export function MapEditor({
           <span>{validationState.valid ? <Check /> : <MapPin />}</span>
           <div>
             <strong>{validationState.areaHa === null ? 'Area pending' : `${validationState.areaHa.toFixed(2)} estimated hectares`}</strong>
-            <p role="status">{validationState.message}</p>
+            <output>{validationState.message}</output>
             <small>Server validation and geodesic area remain authoritative.</small>
           </div>
         </div>
@@ -498,11 +567,23 @@ export function MapEditor({
 
       {apiError && <p className="form-error" role="alert">{apiError}</p>}
       <div className="editor-save-row">
-        <p>{hasUnsavedChanges ? 'You have unsaved changes.' : 'The saved boundary is unchanged.'}</p>
+        <div>
+          {requireBoundaryConfirmation && validationState.valid && (
+            <label className="boundary-confirmation">
+              <input
+                type="checkbox"
+                checked={boundaryConfirmed}
+                onChange={(event) => setBoundaryConfirmed(event.target.checked)}
+              />
+              <span>I confirm this boundary represents land I own or manage.</span>
+            </label>
+          )}
+          <p>{hasUnsavedChanges ? 'You have unsaved changes.' : 'The saved boundary is unchanged.'}</p>
+        </div>
         <Button
           className="primary-button"
           type="button"
-          disabled={!validationState.valid || !draftGeometry || !hasUnsavedChanges || !canSave || isSaving}
+          disabled={!validationState.valid || !draftGeometry || !hasUnsavedChanges || !canSave || isSaving || (requireBoundaryConfirmation && !boundaryConfirmed)}
           onClick={() => draftGeometry && void onSave(draftGeometry)}
         >
           <Save /> {isSaving ? 'Saving farm…' : 'Save farm'}

@@ -330,7 +330,7 @@ async def run_analysis_job(
         for task in tasks:
             task.cr_frame.f_locals["coro"].close()
             task.close()
-        raw_results = [(name, ProviderResult(payload={}, evidence_status=EVIDENCE_UNAVAILABLE,
+        raw_results = [(name, ProviderResult(payload=None, evidence_status=EVIDENCE_UNAVAILABLE,
                        error_message="Live acquisition is disabled in this data mode."))
                        for name in ("weather", "climate", "satellite", "soil", "terrain")]
 
@@ -405,12 +405,12 @@ async def run_analysis_job(
                     job_id=db_job.id,
                     valid_time_utc=now_utc,
                     data_mode=snapshot_data_mode,
-                    weather=adapter_results["weather"].payload,
-                    climate_baseline=adapter_results["climate"].payload,
-                    satellite=adapter_results["satellite"].payload,
-                    soil=adapter_results["soil"].payload,
-                    terrain=adapter_results["terrain"].payload,
-                    conduit=adapter_results["conduit"].payload,
+                    weather=adapter_results["weather"].payload or None,
+                    climate_baseline=adapter_results["climate"].payload or None,
+                    satellite=adapter_results["satellite"].payload or None,
+                    soil=adapter_results["soil"].payload or None,
+                    terrain=adapter_results["terrain"].payload or None,
+                    conduit=adapter_results["conduit"].payload or None,
                     evidence_statuses=evidence_statuses,
                     model_version=MODEL_VERSION,
                 )

@@ -47,6 +47,9 @@ describe('farm creation route', () => {
     await userEvent.click(screen.getByText('Import GeoJSON'));
     fireEvent.change(screen.getByLabelText('GeoJSON Polygon'), { target: { value: boundary } });
     await userEvent.click(screen.getByRole('button', { name: 'Use pasted boundary' }));
+    await userEvent.click(screen.getByRole('checkbox', {
+      name: 'I confirm this boundary represents land I own or manage.',
+    }));
     await userEvent.click(screen.getByRole('button', { name: 'Save farm' }));
     await waitFor(() => expect(createFarm).toHaveBeenCalled());
     expect(createFarm.mock.calls[0][0]).toMatchObject({
