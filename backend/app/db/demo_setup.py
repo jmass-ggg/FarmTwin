@@ -331,20 +331,18 @@ async def setup_demo_database(
 def main() -> None:
     """
     CLI entry point for demo setup command.
-    
+
     Requirements: 1.6, 4.3, 12.2
-    
+
     Usage:
-        python -m app.db.demo_setup
-        python -m app.db.demo_setup --no-farms  # Skip farm fixtures
-    
-    The command reads configuration from environment variables and
-    validates that the database is isolated and configured for demo mode.
+        python -m app.db.demo_setup              # full setup + seed farms
+        python -m app.db.demo_setup --no-farms   # setup without seeding farms
+        python -m app.db.demo_setup --cleanup    # remove seeded demo fixture farms
     """
     import asyncio
-    
-    # Parse arguments
-    seed_farms = "--no-farms" not in sys.argv
+
+    cleanup = "--cleanup" in sys.argv
+    seed_farms = "--no-farms" not in sys.argv and not cleanup
     
     # Load settings from environment
     try:
@@ -362,9 +360,23 @@ def main() -> None:
         print("  DATABASE__NAME=... (isolated demo database)", file=sys.stderr)
         sys.exit(1)
     
-    # Run async setup
+    # Run async setup or cleanup
     try:
-        asyncio.run(setup_demo_database(settings, seed_farms=seed_farms))
+        if cleanup:
+            from app.core.database import create_engine, create_session_factory
+            engine = create_engine(settings)
+            session_factory = create_session_factory(engine)
+
+            async def _run_cleanup() -> None:
+                try:
+                    async with session_factory() as session:
+                        await cleanup_demo_farms(session)
+                finally:
+                    await engine.dispose()
+
+            asyncio.run(_run_cleanup())
+        else:
+            asyncio.run(setup_demo_database(settings, seed_farms=seed_farms))
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -373,6 +385,61 @@ def main() -> None:
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+
+async def cleanup_demo_farms(session: AsyncSession) -> int:
+    """
+    Remove seeded demo fixture farms from the demo database.
+
+    Requirements: 1.6, 4.3
+
+    Only removes farms that:
+    - Belong to the fixed demo user UUID (00000000-0000-0000-0000-000000000001)
+    - Have a name starting with '[DEMO]'
+
+    Real user farms are never touched.  Returns the number of farms removed.
+    """
+    from sqlalchemy import text
+
+    # Identify rows to delete (safety check before any write)
+    result = await session.execute(
+        select(Farm.id, Farm.name).where(
+            Farm.user_id == DEMO_USER_UUID,
+            Farm.name.like("[DEMO]%"),
+        )
+    )
+    rows = result.all()
+    if not rows:
+        print("No demo fixture farms found — nothing to remove.")
+        return 0
+
+    ids = [r.id for r in rows]
+    names = [r.name for r in rows]
+    print(f"Removing {len(ids)} demo fixture farm(s): {names}")
+
+    # Delete analysis snapshots and jobs (no cascade from farms to these tables)
+    await session.execute(
+        text(
+            "DELETE FROM analysis_snapshots WHERE farm_id = ANY(:ids)"
+        ),
+        {"ids": ids},
+    )
+    await session.execute(
+        text("DELETE FROM analysis_jobs WHERE farm_id = ANY(:ids)"),
+        {"ids": ids},
+    )
+
+    # Delete farms — the FK from farm_geometry_revisions to farms has ON DELETE CASCADE
+    # so revisions are removed automatically.  The circular FK fk_farms_current_geometry
+    # is deferrable; defer it so we can delete the farm row before revisions are gone.
+    await session.execute(text("SET CONSTRAINTS fk_farms_current_geometry DEFERRED"))
+    await session.execute(
+        text("DELETE FROM farms WHERE id = ANY(:ids)"),
+        {"ids": ids},
+    )
+    await session.commit()
+    print(f"✓ Removed {len(ids)} demo fixture farm(s)")
+    return len(ids)
 
 
 if __name__ == "__main__":
