@@ -236,6 +236,7 @@ def test_openapi_documents_phase_5_operations_and_common_errors(contract_app):
     }
 
     expected_operations = {
+        "/api/v1/me": {"get", "patch"},
         "/api/v1/farms": {"get", "post"},
         "/api/v1/farms/{farm_id}": {"get", "patch", "delete"},
         "/api/v1/farms/{farm_id}/decision-support": {"post"},

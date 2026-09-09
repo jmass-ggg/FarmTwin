@@ -410,9 +410,12 @@ def score(crop: CropRequirements, context: SnapshotContext) -> SimulationResult:
     supported = context.temperature_mean_c is not None and context.rainfall_total_mm is not None
     available = {key: weight for key, weight in weights.items() if getattr(components, key) is not None}
     suitability_index = None
-    if supported:
+    if hard_exclusion:
+        # Hard exclusion always forces suitability_index to 0, regardless of missing inputs
+        suitability_index = 0
+    elif supported:
         raw = sum(getattr(components, key) * weight for key, weight in available.items()) / sum(available.values())
-        suitability_index = 0 if hard_exclusion else int(_clamp(round(raw), 0, 100))
+        suitability_index = int(_clamp(round(raw), 0, 100))
     limiting = _limiting_factor(components, weights)
     qual_label = _label(suitability_index) if suitability_index is not None else "Insufficient evidence"
     reason = (_build_reason(crop.name, suitability_index, qual_label, limiting, hard_exclusion, hard_exclusion_reason)
