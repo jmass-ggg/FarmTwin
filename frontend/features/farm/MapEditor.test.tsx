@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Link from 'next/link';
@@ -7,7 +7,10 @@ import { MapEditor } from './MapEditor';
 
 const sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
 const flyTo = vi.fn();
+const fitBounds = vi.fn();
+let hitVertex: number | null = null;
 let mapShouldFail = false;
+const mapHandlers = new Map<string, (event: unknown) => void>();
 
 vi.mock('maplibre-gl', () => {
   class MockMap {
@@ -19,14 +22,22 @@ vi.mock('maplibre-gl', () => {
     getSource(name: string) { return sources.get(name); }
     isStyleLoaded() { return true; }
     flyTo = flyTo;
+    fitBounds = fitBounds;
+    dragPan = { disable: vi.fn(), enable: vi.fn() };
+    queryRenderedFeatures() { return hitVertex === null ? [] : [{ properties: { index: hitVertex } }]; }
+    project(point: number[]) { return { x: point[0], y: point[1] }; }
     remove() {}
-    on(event: string, handler: () => void) { if (event === 'load') handler(); }
+    on(event: string, handler: (event?: unknown) => void) {
+      mapHandlers.set(event, handler);
+      if (event === 'load') handler();
+    }
   }
   return {
     default: {
       Map: MockMap,
       AttributionControl: class {},
       NavigationControl: class {},
+      LngLatBounds: class { extend() { return this; } },
     },
   };
 });
@@ -44,7 +55,62 @@ async function importBoundary(text: string) {
 }
 
 describe('MapEditor', () => {
-  beforeEach(() => { sources.clear(); flyTo.mockClear(); mapShouldFail = false; });
+  it('draws three vertices, closes, undoes, redraws and saves the confirmed polygon', async () => {
+    const save = vi.fn();
+    render(<MapEditor requireBoundaryConfirmation onSave={save} />);
+    const clickMap = (lng: number, lat: number) => act(() => {
+      mapHandlers.get('click')?.({ lngLat: { lng, lat } });
+    });
+    const draw = () => {
+      clickMap(36.8, -1.3);
+      clickMap(36.805, -1.3);
+      clickMap(36.805, -1.295);
+    };
+    draw();
+    const close = screen.getByRole('button', { name: 'Close ring' });
+    expect(close).toBeEnabled();
+    await userEvent.click(close);
+    expect(screen.getByText('Boundary is ready to save.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save farm' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Undo vertex' }));
+    expect(close).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Draw boundary' }));
+    expect(close).toBeDisabled();
+    draw();
+    await userEvent.click(close);
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save farm' }));
+    expect(save).toHaveBeenCalledWith(JSON.parse(valid));
+  });
+  beforeEach(() => { sources.clear(); flyTo.mockClear(); fitBounds.mockClear(); hitVertex = null; mapShouldFail = false; });
+
+  it('fits a saved boundary, moves and deletes a corner, inserts an edge corner, erases and resets', async () => {
+    render(<MapEditor initialGeometry={JSON.parse(valid)} onSave={vi.fn()} />);
+    expect(fitBounds).toHaveBeenCalled();
+    hitVertex = 0;
+    act(() => mapHandlers.get('mousedown')?.({ point: { x: 0, y: 0 }, preventDefault: vi.fn() }));
+    act(() => mapHandlers.get('mousemove')?.({ lngLat: { lng: 36.799, lat: -1.301 } }));
+    act(() => mapHandlers.get('mouseup')?.({}));
+    const draft = () => sources.get('draft-boundary')!.setData.mock.lastCall![0].geometry.coordinates[0];
+    expect(draft()[0]).toEqual([36.799, -1.301]);
+    expect(draft().at(-1)).toEqual(draft()[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'Undo vertex' }));
+    expect(draft()).toEqual(JSON.parse(valid).coordinates[0]);
+    // The click after a drag is intentionally suppressed.
+    hitVertex = null;
+    act(() => mapHandlers.get('click')?.({ point: { x: 36.802, y: -1.3 }, lngLat: { lng: 36.802, lat: -1.3 } }));
+    act(() => mapHandlers.get('click')?.({ point: { x: 36.802, y: -1.3 }, lngLat: { lng: 36.802, lat: -1.3 } }));
+    expect(draft()).toHaveLength(5);
+    await userEvent.click(screen.getByRole('button', { name: 'Delete selected corner' }));
+    expect(draft()).toHaveLength(4);
+    await userEvent.click(screen.getByRole('button', { name: 'Erase boundary' }));
+    expect(sources.get('draft-boundary')!.setData.mock.lastCall![0].features).toEqual([]);
+    expect(sources.get('saved-boundary')!.setData.mock.lastCall![0].features).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Save farm' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Reset / cancel edits' }));
+    expect(draft()).toEqual(JSON.parse(valid).coordinates[0]);
+    expect(screen.getByRole('button', { name: 'Save farm' })).toBeDisabled();
+  });
 
   it('disables save with too few vertices', () => {
     render(<MapEditor onSave={vi.fn()} />);

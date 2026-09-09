@@ -47,7 +47,7 @@ export default function Home() {
             <Link href="/app/project">Project & architecture</Link>
           </nav>
           <div className="header-actions">
-            <span className="demo-badge"><span aria-hidden="true" /> Preview · non-live</span>
+            <span className="demo-badge"><span aria-hidden="true" /> Local development</span>
             <Button size="lg" render={<Link href="/app" />} className="primary-button header-cta">
               Open workspace
             </Button>

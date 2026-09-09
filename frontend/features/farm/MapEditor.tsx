@@ -213,6 +213,9 @@ export function MapEditor({
   const [mapMode, setMapMode] = useState<MapMode>('loading');
   const [fallbackCenter, setFallbackCenter] = useState<Position>(initialCenter);
   const [fallbackZoom, setFallbackZoom] = useState(initialGeometry ? 14 : 10);
+  const [selectedVertex, setSelectedVertex] = useState<number | null>(null);
+  const history = useRef<Array<{ coordinates: Position[]; closed: boolean }>>([]);
+  const [historyLength, setHistoryLength] = useState(0);
   const coordinatesRef = useRef(coordinates);
   const closedRef = useRef(closed);
 
@@ -229,14 +232,26 @@ export function MapEditor({
   );
   const hasUnsavedChanges = dirty || hasExternalChanges;
 
+  const remember = useCallback(() => {
+    history.current.push({ coordinates: structuredClone(coordinatesRef.current), closed: closedRef.current });
+    setHistoryLength(history.current.length);
+  }, []);
+
+  const change = useCallback((points: Position[], isClosed: boolean) => {
+    coordinatesRef.current = points;
+    closedRef.current = isClosed;
+    setCoordinates(points);
+    setClosed(isClosed);
+    setDirty(true);
+    setBoundaryConfirmed(false);
+  }, []);
+
   const finishDrawing = useCallback(() => {
     const points = coordinatesRef.current;
     if (closedRef.current || points.length < 3) return;
-    const first = points[0];
-    setCoordinates([...points, [...first]]);
-    setClosed(true);
-    setDirty(true);
-  }, []);
+    remember();
+    change([...points, [...points[0]]], true);
+  }, [change, remember]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -274,7 +289,7 @@ export function MapEditor({
         id: 'saved-line', type: 'line', source: 'saved-boundary',
         paint: { 'line-color': '#08783b', 'line-width': 3 },
       });
-      map.addSource('draft-boundary', { type: 'geojson', data: asFeature(null) });
+      map.addSource('draft-boundary', { type: 'geojson', data: asFeature(initialGeometry ?? null) });
       map.addLayer({
         id: 'draft-fill', type: 'fill', source: 'draft-boundary',
         paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.22 },
@@ -303,6 +318,11 @@ export function MapEditor({
           'circle-stroke-width': 3,
         },
       });
+      if (initialGeometry) {
+        const ring = initialGeometry.coordinates[0] as Position[];
+        const bounds = ring.reduce((box, point) => box.extend(point), new maplibregl.LngLatBounds(ring[0], ring[0]));
+        map.fitBounds(bounds, { padding: 90, maxZoom: 17, duration: 0 });
+      }
       setMapCursor(map, closedRef.current ? 'grab' : 'crosshair');
     });
     map.on('error', (event) => {
@@ -310,23 +330,81 @@ export function MapEditor({
       // to the compatibility map instead of leaving a featureless green box.
       if (event.error) setMapMode('fallback');
     });
+    let dragging: number | null = null;
+    let dragged = false;
+    const vertexAt = (point: { x: number; y: number }) => {
+      if (!map.isStyleLoaded()) return null;
+      const feature = map.queryRenderedFeatures?.(point as maplibregl.PointLike, { layers: ['draft-vertices'] })[0];
+      return feature ? Number(feature.properties.index) : null;
+    };
+    map.on('mousedown', (event) => {
+      const index = vertexAt(event.point);
+      if (index === null) return;
+      event.preventDefault();
+      dragging = index;
+      dragged = false;
+      setSelectedVertex(index);
+      remember();
+      map.dragPan.disable();
+    });
+    map.on('mousemove', (event) => {
+      if (dragging === null) return;
+      dragged = true;
+      const points = structuredClone(coordinatesRef.current);
+      points[dragging] = [event.lngLat.lng, event.lngLat.lat];
+      if (closedRef.current && dragging === 0) points[points.length - 1] = [...points[0]];
+      change(points, closedRef.current);
+    });
+    const stopDrag = () => { dragging = null; map.dragPan?.enable(); };
+    map.on('mouseup', stopDrag);
+    window.addEventListener('mouseup', stopDrag);
     map.on('click', (event) => {
-      if (closedRef.current) return;
-      setCoordinates((current) => [...current, [event.lngLat.lng, event.lngLat.lat]]);
-      setDirty(true);
+      if (dragged) { dragged = false; return; }
+      const index = vertexAt(event.point);
+      if (index !== null) { setSelectedVertex(index); return; }
+      const point: Position = [event.lngLat.lng, event.lngLat.lat];
+      const points = structuredClone(coordinatesRef.current);
+      if (closedRef.current) {
+        // Insert into the closest edge in screen space, preserving ring order.
+        let best = Infinity;
+        let insertion = 1;
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = map.project(points[i]);
+          const b = map.project(points[i + 1]);
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const t = Math.max(0, Math.min(1, ((event.point.x - a.x) * dx + (event.point.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+          const distance = Math.hypot(event.point.x - a.x - t * dx, event.point.y - a.y - t * dy);
+          if (distance < best) { best = distance; insertion = i + 1; }
+        }
+        if (best > 14) { setSelectedVertex(null); return; }
+        remember();
+        points.splice(insertion, 0, point);
+        change(points, true);
+        setSelectedVertex(insertion);
+      } else {
+        remember();
+        change([...points, point], false);
+      }
     });
     map.on('dblclick', finishDrawing);
     mapRef.current = map;
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => map.resize())
+      : null;
+    resizeObserver?.observe(mapContainerRef.current);
     return () => {
+      window.removeEventListener('mouseup', stopDrag);
+      resizeObserver?.disconnect();
       window.clearTimeout(loadTimer);
       map.remove();
       mapRef.current = null;
     };
-  }, [finishDrawing, initialCenter, initialGeometry]);
+  }, [change, remember, finishDrawing, initialCenter, initialGeometry]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
+    (map.getSource('saved-boundary') as GeoJSONSource | undefined)?.setData(asFeature(dirty ? null : initialGeometry ?? null));
     (map.getSource('draft-boundary') as GeoJSONSource | undefined)?.setData(asFeature(draftGeometry));
     (map.getSource('draft-preview') as GeoJSONSource | undefined)?.setData(
       closed ? lineFeature([]) : lineFeature(coordinates),
@@ -334,8 +412,9 @@ export function MapEditor({
     (map.getSource('draft-vertices') as GeoJSONSource | undefined)?.setData(
       pointFeatures(coordinates, closed),
     );
+    map.setPaintProperty?.('draft-vertices', 'circle-color', ['case', ['==', ['get', 'index'], selectedVertex ?? -1], '#f59e0b', '#fff7e6']);
     setMapCursor(map, closed ? 'grab' : 'crosshair');
-  }, [closed, coordinates, draftGeometry]);
+  }, [closed, coordinates, draftGeometry, dirty, initialGeometry, mapMode, selectedVertex]);
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
@@ -360,30 +439,45 @@ export function MapEditor({
   }, [hasUnsavedChanges]);
 
   const startDrawing = () => {
-    setCoordinates([]);
-    setClosed(false);
-    setDirty(true);
+    remember();
+    change([], false);
+    setSelectedVertex(null);
     setImportError(null);
-    setBoundaryConfirmed(false);
   };
 
   const undo = () => {
-    if (closed) {
-      setCoordinates((current) => current.slice(0, -1));
-      setClosed(false);
-    } else {
-      setCoordinates((current) => current.slice(0, -1));
-    }
-    setDirty(true);
-    setBoundaryConfirmed(false);
+    const previous = history.current.pop();
+    if (!previous) return;
+    change(previous.coordinates, previous.closed);
+    setHistoryLength(history.current.length);
+    setSelectedVertex(null);
+  };
+
+  const reset = () => {
+    change(structuredClone((initialGeometry?.coordinates[0] ?? []) as Position[]), Boolean(initialGeometry));
+    history.current = [];
+    setHistoryLength(0);
+    setSelectedVertex(null);
+    setImportError(null);
+    setImportText('');
+    setDirty(false);
+  };
+
+  const deleteVertex = () => {
+    if (selectedVertex === null) return;
+    remember();
+    const points = closed ? coordinates.slice(0, -1) : [...coordinates];
+    points.splice(selectedVertex, 1);
+    const staysClosed = closed && points.length >= 3;
+    change(staysClosed ? [...points, [...points[0]]] : points, staysClosed);
+    setSelectedVertex(null);
   };
 
   const applyImport = (value: string) => {
     try {
       const geometry = parseImportedGeometry(value);
-      setCoordinates(geometry.coordinates[0] as Position[]);
-      setClosed(true);
-      setDirty(true);
+      remember();
+      change(geometry.coordinates[0] as Position[], true);
       setImportError(null);
       setBoundaryConfirmed(false);
       const first = geometry.coordinates[0][0];
@@ -433,8 +527,8 @@ export function MapEditor({
       centerPoint[0] + event.clientX - rect.left - rect.width / 2,
       centerPoint[1] + event.clientY - rect.top - rect.height / 2,
     ];
-    setCoordinates((current) => [...current, unprojectMercator(clickedPoint, fallbackZoom)]);
-    setDirty(true);
+    remember();
+    change([...coordinatesRef.current, unprojectMercator(clickedPoint, fallbackZoom)], false);
   };
 
   const fallbackPoints = coordinates.map((coordinate) => {
@@ -508,7 +602,7 @@ export function MapEditor({
         )}
         <output className="map-drawing-hint">
           {closed
-            ? 'Boundary closed · use Undo to edit it'
+            ? 'Drag a corner to move it · click an edge to add a corner'
             : coordinates.length === 0
               ? 'Click the map to place the first corner'
               : coordinates.length < 3
@@ -517,12 +611,15 @@ export function MapEditor({
         </output>
         <div className="drawing-controls" aria-label="Drawing controls">
           <Button type="button" onClick={startDrawing}><RotateCcw /> Draw boundary</Button>
-          <Button type="button" variant="outline" onClick={undo} disabled={coordinates.length === 0}>
+          <Button type="button" variant="outline" onClick={undo} disabled={historyLength === 0}>
             <Undo2 /> Undo vertex
           </Button>
           <Button type="button" variant="outline" onClick={finishDrawing} disabled={closed || coordinates.length < 3}>
             <Redo2 /> Close ring
           </Button>
+          <Button type="button" variant="outline" onClick={deleteVertex} disabled={selectedVertex === null}>Delete selected corner</Button>
+          <Button type="button" variant="outline" onClick={startDrawing} disabled={coordinates.length === 0}>Erase boundary</Button>
+          <Button type="button" variant="outline" onClick={reset} disabled={!dirty}>Reset / cancel edits</Button>
         </div>
         <div className="map-legend" aria-label="Boundary legend">
           {initialGeometry && <span><i data-kind="saved" /> Saved boundary</span>}

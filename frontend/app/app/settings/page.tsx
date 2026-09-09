@@ -201,14 +201,14 @@ export default function SettingsPage() {
                 ? 'Checking\u2026'
                 : backendStatus === 'connected'
                 ? 'Connected'
-                : 'Demonstration mode'}
+                : 'Unreachable'}
             </h2>
           </div>
           <p>
             {backendStatus === 'connected'
               ? 'This build is connected to the configured FarmTwin backend.'
               : backendStatus === 'unreachable'
-              ? 'The backend API could not be reached. Running in read-only demonstration mode.'
+              ? 'The backend API could not be reached. Check that the backend is running.'
               : 'Checking backend connectivity\u2026'}
           </p>
           <span
@@ -218,7 +218,7 @@ export default function SettingsPage() {
             {backendStatus === 'connected'
               ? 'Backend online'
               : backendStatus === 'unreachable'
-              ? 'Demonstration API'
+              ? 'Backend unreachable'
               : 'Checking\u2026'}
           </span>
         </section>

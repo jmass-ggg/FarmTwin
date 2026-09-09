@@ -36,7 +36,7 @@ const secondaryNavigation = [
 
 function Navigation({ close }: { close?: () => void }) {
   const pathname = usePathname();
-  const farmId = pathname.match(/^\/app\/farms\/([^/]+)/)?.[1];
+  const farmId = pathname.match(/^\/app\/farms\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i)?.[1];
   const farmBase = farmId ? `/app/farms/${farmId}` : null;
   const primaryNavigation = [
     { href: '/app', label: 'Overview', icon: Home, available: true },

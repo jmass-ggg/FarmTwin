@@ -400,7 +400,8 @@
 .location-search button { min-height: 40px; }
 .map-helper-text { overflow: hidden; margin: 8px 0 0 32px; color: #66756c; font-size: .74rem; text-overflow: ellipsis; white-space: nowrap; }
 .map-workspace { position: relative; min-height: 520px; background-color: #dce7de; background-image: linear-gradient(rgb(8 120 59 / 6%) 1px, transparent 1px), linear-gradient(90deg, rgb(8 120 59 / 6%) 1px, transparent 1px); background-size: 32px 32px; }
-.map-canvas { position: absolute; inset: 0; z-index: 1; }
+.map-workspace > .map-canvas { position: absolute; inset: 0; z-index: 1; }
+.map-workspace > .map-canvas.maplibregl-map { position: absolute; inset: 0; }
 .map-loading { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; color: #375445; background: #dce7de; font-weight: 650; }
 .fallback-map { position: absolute; inset: 0; z-index: 2; overflow: hidden; background: #dce7de; }
 .fallback-map iframe { width: 100%; height: 100%; border: 0; pointer-events: none; }
@@ -842,8 +843,9 @@
 .twin-loading-page { height: 100vh; padding: 18px; }
 .twin-page { display: grid; grid-template-columns: minmax(0, 1fr) 350px; min-height: 100vh; background: #eef3ef; }
 .twin-map-column { min-width: 0; padding: 14px; }
-.twin-map-workspace { position: sticky; top: 14px; min-height: calc(100vh - 28px); overflow: hidden; border: 1px solid #d6e2d9; border-radius: 18px; background: #cedbd0; box-shadow: 0 12px 35px rgb(27 60 38 / 9%); }
-.twin-map-canvas { position: absolute; inset: 68px 0 0; min-height: 520px; }
+.twin-map-workspace { position: sticky; top: 14px; height: calc(100dvh - 28px); min-height: 520px; overflow: hidden; border: 1px solid #d6e2d9; border-radius: 18px; background: #cedbd0; box-shadow: 0 12px 35px rgb(27 60 38 / 9%); }
+.twin-map-workspace > .twin-map-canvas { position: absolute; inset: 68px 0 0; }
+.twin-map-workspace > .twin-map-canvas.maplibregl-map { position: absolute; }
 .twin-map-toolbar { position: absolute; z-index: 5; top: 0; right: 0; left: 0; display: grid; grid-template-columns: minmax(260px, 1fr) auto; gap: 10px; align-items: center; min-height: 68px; border-bottom: 1px solid #dce6df; background: rgb(255 255 255 / 96%); padding: 10px; backdrop-filter: blur(12px); }
 .twin-map-search { display: grid; grid-template-columns: 18px minmax(120px, 1fr) auto; gap: 8px; align-items: center; }
 .twin-map-search > svg { width: 17px; color: #65766c; }
@@ -890,6 +892,8 @@
 .twin-analysis-progress svg, .twin-empty-analysis > svg { color: #07883d; }
 .twin-analysis-progress div { display: flex; flex-direction: column; gap: 3px; }
 .twin-analysis-progress span, .twin-empty-analysis span { color: #718077; font-size: .72rem; line-height: 1.45; }
+.twin-analysis-progress-header { display: flex; flex-direction: row !important; align-items: center; gap: 10px; text-align: left !important; width: 100%; }
+.twin-analysis-progress-header div { flex: 1; }
 .spin { animation: twin-spin 1.2s linear infinite; }
 @keyframes twin-spin { to { transform: rotate(360deg); } }
 .twin-evidence-drawer { grid-column: 1 / -1; border-top: 1px solid #d9e4dc; background: #f6f9f6; padding: 30px; }
@@ -899,22 +903,31 @@
 .twin-evidence-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .twin-evidence-note { margin: 14px 0 0; color: #718077; font-size: .72rem; }
 .job-progress-panel { border: 1px solid #dfe7e1; border-radius: 16px; background: #fff; padding: 22px; }
-.job-stage-list { display: flex; flex-direction: column; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }
-.job-stage-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid #edf1ee; font-size: .82rem; }
-.job-stage-item:first-child { border-top: 0; }
-.job-stage-name { color: #3d5145; text-transform: capitalize; }
+.job-stage-list { display: flex; flex-direction: column; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; width: 100%; }
+.job-stage-item, .job-stage-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #edf1ee; font-size: .82rem; }
+.job-stage-item:first-child, .job-stage-row:first-child { border-top: 0; }
+.job-stage-name { flex: 1; color: #3d5145; text-transform: capitalize; }
 .job-stage-status { color: #8a9690; font-size: .72rem; font-weight: 720; text-transform: capitalize; }
-.job-stage-item[data-status='running'] .job-stage-status { color: #07883d; }
-.job-stage-item[data-status='completed'] .job-stage-status { color: #08763a; }
-.job-stage-item[data-status='failed'] .job-stage-status { color: #b23a3a; }
+.job-stage-row[data-status='running'] .job-stage-status, .job-stage-item[data-status='running'] .job-stage-status { color: #07883d; }
+.job-stage-row[data-status='completed'] .job-stage-status, .job-stage-item[data-status='completed'] .job-stage-status { color: #08763a; }
+.job-stage-row[data-status='failed'] .job-stage-status, .job-stage-item[data-status='failed'] .job-stage-status { color: #b23a3a; }
+.stage-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.stage-icon-done { color: #08783b; }
+.stage-icon-failed { color: #b23a3a; }
+.stage-icon-running { color: #07883d; }
+.stage-icon-queued { color: #b0c4b9; }
+.insight-unavailable { color: #8a9690; font-size: .8rem; margin: 4px 0; }
+.insight-unavailable-inline { color: #8a9690; font-size: .82rem; }
+.insight-note { color: #8a9690; font-size: .72rem; margin: 6px 0 0; }
+.insight-note-warning { color: #b07f2a; }
 
 @media (max-width: 960px) {
   .twin-page { grid-template-columns: 1fr; }
-  .twin-map-workspace { position: relative; top: 0; min-height: 640px; }
+  .twin-map-workspace { position: relative; top: 0; height: 640px; min-height: 640px; }
   .farm-insight-panel { border-top: 1px solid #d9e4dc; border-left: 0; }
   .twin-evidence-grid { grid-template-columns: 1fr 1fr; }
   .twin-map-toolbar { grid-template-columns: 1fr; min-height: 116px; }
-  .twin-map-canvas, .twin-map-unavailable { top: 116px; }
+  .twin-map-workspace > .twin-map-canvas, .twin-map-unavailable { top: 116px; }
   .twin-layer-tabs { overflow-x: auto; }
   .climate-tab-list { overflow-x: auto; padding-bottom: 0; }
   .climate-tab-button { white-space: nowrap; }
@@ -923,7 +936,7 @@
 @media (max-width: 640px) {
   .farm-create-steps { grid-template-columns: 1fr; }
   .twin-map-column { padding: 8px; }
-  .twin-map-workspace { min-height: 580px; border-radius: 13px; }
+  .twin-map-workspace { height: 580px; min-height: 580px; border-radius: 13px; }
   .twin-map-search { grid-template-columns: 18px 1fr; }
   .twin-map-search button { grid-column: 1 / -1; }
   .twin-evidence-grid { grid-template-columns: 1fr; }

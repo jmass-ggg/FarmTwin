@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
-import './globals.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import './globals.css';
 import { QueryProvider } from '@/components/query-provider';
 import { Toaster } from '@/components/ui/toast';
 

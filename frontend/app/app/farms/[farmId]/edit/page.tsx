@@ -24,6 +24,7 @@ import { MapEditor } from '@/features/farm/MapEditor';
 import {
   getFarm,
   StaleRevisionError,
+  triggerAnalysis,
   updateFarm,
   ValidationError,
   type GeoJSONPolygon,
@@ -40,6 +41,7 @@ function FarmEditForm({ farmId }: { farmId: string }) {
   const [nameError, setNameError] = useState<string | null>(null);
   const [geometryError, setGeometryError] = useState<string | null>(null);
   const [staleOpen, setStaleOpen] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   if (farmQuery.isPending) {
     return <section className="workspace-card loading-card"><Skeleton className="h-8 w-64" /><Skeleton className="h-96 w-full" /></section>;
@@ -52,6 +54,7 @@ function FarmEditForm({ farmId }: { farmId: string }) {
   const currentName = name ?? farm.name;
   const save = async (geometry: GeoJSONPolygon) => {
     setSaving(true);
+    setAnalysisError(null);
     setNameError(null);
     setGeometryError(null);
     try {
@@ -63,6 +66,12 @@ function FarmEditForm({ farmId }: { farmId: string }) {
       queryClient.setQueryData(['farm', farmId], updated);
       await queryClient.invalidateQueries({ queryKey: ['farms'] });
       setName(updated.name);
+      // Trigger a new analysis job for the updated geometry revision
+      try {
+        await triggerAnalysis(farmId);
+      } catch {
+        setAnalysisError('Boundary saved. Analysis could not start. Please retry.');
+      }
     } catch (error) {
       if (error instanceof StaleRevisionError) {
         setStaleOpen(true);
@@ -83,7 +92,7 @@ function FarmEditForm({ farmId }: { farmId: string }) {
         <div>
           <p className="section-kicker">Boundary revision {farm.current_geometry_revision}</p>
           <h1>Edit {farm.name}</h1>
-          <p>The solid green shape is saved. Start a new draft to revise it.</p>
+          <p>Drag a corner to move it, click an edge to add a corner, or select a corner to delete it.</p>
         </div>
         <FarmNameInput value={currentName} onChange={(value) => { setName(value); setNameError(null); }} error={nameError} />
       </header>
@@ -96,6 +105,13 @@ function FarmEditForm({ farmId }: { farmId: string }) {
         apiError={geometryError}
         onSave={save}
       />
+      {analysisError && <div role="alert" className="form-error">
+        {analysisError}
+        <button type="button" onClick={async () => {
+          try { await triggerAnalysis(farmId); setAnalysisError(null); }
+          catch { setAnalysisError('Analysis could not start. Please retry.'); }
+        }}>Retry analysis</button>
+      </div>}
       <div className="farm-danger-zone">
         <div><strong>Delete this farm</strong><p>This is available only when no analysis snapshots depend on it.</p></div>
         <DeleteFarmDialog farmId={farmId} farmName={farm.name} />
