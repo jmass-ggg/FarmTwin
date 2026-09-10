@@ -29,6 +29,7 @@ import {
   ValidationError,
   type GeoJSONPolygon,
 } from '@/lib/api/farms';
+import { Button } from '@/components/ui/button';
 
 function FarmEditForm({ farmId }: { farmId: string }) {
   const queryClient = useQueryClient();
@@ -38,6 +39,7 @@ function FarmEditForm({ farmId }: { farmId: string }) {
   });
   const [name, setName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [geometryError, setGeometryError] = useState<string | null>(null);
   const [staleOpen, setStaleOpen] = useState(false);
@@ -52,6 +54,27 @@ function FarmEditForm({ farmId }: { farmId: string }) {
 
   const farm = farmQuery.data;
   const currentName = name ?? farm.name;
+
+  const saveName = async () => {
+    if (currentName.trim() === farm.name) return;
+    setSavingName(true);
+    setNameError(null);
+    try {
+      const updated = await updateFarm(farmId, { name: currentName.trim() });
+      queryClient.setQueryData(['farm', farmId], updated);
+      await queryClient.invalidateQueries({ queryKey: ['farms'] });
+      setName(updated.name);
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        setNameError(error.fieldMessage('name') ?? error.message);
+      } else {
+        setNameError(error instanceof Error ? error.message : 'Name update failed.');
+      }
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const save = async (geometry: GeoJSONPolygon) => {
     setSaving(true);
     setAnalysisError(null);
@@ -95,6 +118,17 @@ function FarmEditForm({ farmId }: { farmId: string }) {
           <p>Drag a corner to move it, click an edge to add a corner, or select a corner to delete it.</p>
         </div>
         <FarmNameInput value={currentName} onChange={(value) => { setName(value); setNameError(null); }} error={nameError} />
+        {currentName.trim() !== farm.name && (
+          <div className="name-save-row">
+            <Button
+              className="primary-button"
+              disabled={savingName || !currentName.trim()}
+              onClick={() => void saveName()}
+            >
+              {savingName ? 'Saving…' : 'Save name'}
+            </Button>
+          </div>
+        )}
       </header>
       <MapEditor
         key={farm.current_geometry.id}

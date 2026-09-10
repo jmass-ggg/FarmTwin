@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 SOILGRIDS_URL = "https://rest.isric.org/soilgrids/v2.0/properties/query"
 SOURCE_NAME = "soilgrids-v2"
-REQUEST_TIMEOUT_SECONDS = 30.0
+REQUEST_TIMEOUT_SECONDS = 60.0
 
 # Nominal spatial resolution of SoilGrids (metres)
 RESOLUTION_M = 250

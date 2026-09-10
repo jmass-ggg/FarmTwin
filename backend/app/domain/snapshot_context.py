@@ -138,7 +138,7 @@ def seasonal_values(climate: dict, start: date, months: int) -> tuple[float | No
     rain = monthly.get("precipitation_sum") or {}
     temp_sum, rain_sum, count = 0.0, 0.0, 0
     temp_complete = True
-    rain_complete = climate.get("aggregation_version") == "monthly-totals-v2"
+    rain_complete = True  # Provider stores monthly totals; require every season month below.
     day = start
     while day < end:
         temp, precip = temperatures.get(str(day.month)), rain.get(str(day.month))
@@ -174,6 +174,15 @@ def context_from_snapshot(
     satellite = snapshot.satellite or {}
     conduit = snapshot.conduit or {}
     weather = snapshot.weather or {}
+    vpd = accepted(conduit.get("vpd_mean_kpa"))
+    if vpd is None and snapshot.data_mode in ("live", "historical_replay"):
+        fields = weather.get("fields") or {}
+        temp_env, rh_env = fields.get("temperature_2m"), fields.get("relative_humidity_2m")
+        if all((env or {}).get("data_mode") in ("live", "historical_replay") for env in (temp_env, rh_env)):
+            current_temp, humidity = accepted(temp_env), accepted(rh_env)
+            if current_temp is not None and humidity is not None and 0 < humidity < 100 and -100 < current_temp < 100:
+                saturation = 0.6108 * math.exp(17.27 * current_temp / (current_temp + 237.3))
+                vpd = saturation * (1 - humidity / 100)
     daily = weather.get("daily") or {}
     # Require seven complete daily totals. A partial forecast is not seven-day rainfall.
     rain_days = daily.get("precipitation_sum") or []
@@ -188,7 +197,7 @@ def context_from_snapshot(
         "temperature_mean_c": temperature, "rainfall_total_mm": rainfall,
         "soil_ph": soil_values["phh2o"], "soil_clay_pct": soil_values["clay"],
         "soil_sand_pct": soil_values["sand"], "ndvi_mean": accepted(satellite.get("ndvi")),
-        "vpd_kpa": accepted(conduit.get("vpd_mean_kpa")),
+        "vpd_kpa": vpd,
     }
     return SnapshotContext(
         source="snapshot", snapshot_id=str(snapshot.id), data_mode=snapshot.data_mode,

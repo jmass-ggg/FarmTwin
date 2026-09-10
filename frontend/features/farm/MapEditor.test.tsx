@@ -10,6 +10,7 @@ const flyTo = vi.fn();
 const fitBounds = vi.fn();
 let hitVertex: number | null = null;
 let mapShouldFail = false;
+let deferLoad = false;
 const mapHandlers = new Map<string, (event: unknown) => void>();
 
 vi.mock('maplibre-gl', () => {
@@ -29,7 +30,7 @@ vi.mock('maplibre-gl', () => {
     remove() {}
     on(event: string, handler: (event?: unknown) => void) {
       mapHandlers.set(event, handler);
-      if (event === 'load') handler();
+      if (event === 'load' && !deferLoad) handler();
     }
   }
   return {
@@ -82,7 +83,45 @@ describe('MapEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save farm' }));
     expect(save).toHaveBeenCalledWith(JSON.parse(valid));
   });
-  beforeEach(() => { sources.clear(); flyTo.mockClear(); fitBounds.mockClear(); hitVertex = null; mapShouldFail = false; });
+  beforeEach(() => { sources.clear(); flyTo.mockClear(); fitBounds.mockClear(); hitVertex = null; mapShouldFail = false; deferLoad = false; vi.unstubAllGlobals(); });
+
+  it('queues search until map load', async () => {
+    deferLoad = true;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [{ lon: '36.82', lat: '-1.29', display_name: 'Nairobi, Kenya' }] }));
+    render(<MapEditor onSave={vi.fn()} />);
+    const input = screen.getByLabelText('Search location or enter latitude, longitude');
+    fireEvent.change(input, { target: { value: 'Nairobi' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(await screen.findByText('Nairobi, Kenya')).toBeInTheDocument();
+    expect(flyTo).not.toHaveBeenCalled();
+    act(() => mapHandlers.get('load')?.({}));
+    expect(flyTo).toHaveBeenCalledWith({ center: [36.82, -1.29], zoom: 14 });
+  });
+
+  it('remounts fallback on Find and reports HTTP errors', async () => {
+    mapShouldFail = true;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [{ lon: '36.82', lat: '-1.29', display_name: 'Nairobi, Kenya' }] }).mockResolvedValueOnce({ ok: false }));
+    render(<MapEditor onSave={vi.fn()} />);
+    const original = await screen.findByTitle('OpenStreetMap farm boundary map');
+    fireEvent.change(screen.getByLabelText('Search location or enter latitude, longitude'), { target: { value: 'Nairobi' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Find' }));
+    expect(await screen.findByText('Nairobi, Kenya')).toBeInTheDocument();
+    expect(screen.getByTitle('OpenStreetMap farm boundary map')).not.toBe(original);
+    await userEvent.click(screen.getByRole('button', { name: 'Find' }));
+    expect(await screen.findByText('Location search is unavailable. Please try again.')).toBeInTheDocument();
+  });
+
+  it('explains name and confirmation requirements', async () => {
+    const save = vi.fn();
+    const { rerender } = render(<MapEditor canSave={false} requireBoundaryConfirmation onSave={save} />);
+    expect(screen.getByText('Enter a farm name at the top of the page.')).toBeInTheDocument();
+    rerender(<MapEditor canSave requireBoundaryConfirmation onSave={save} />);
+    expect(screen.getByText('Double-click the map or click Close ring to finish your boundary.')).toBeInTheDocument();
+    await importBoundary(valid);
+    expect(screen.getByText('Tick the confirmation checkbox above.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: 'Save farm' })).toBeEnabled();
+  });
 
   it('fits a saved boundary, moves and deletes a corner, inserts an edge corner, erases and resets', async () => {
     render(<MapEditor initialGeometry={JSON.parse(valid)} onSave={vi.fn()} />);
@@ -123,7 +162,7 @@ describe('MapEditor', () => {
     await importBoundary(JSON.stringify({
       type: 'Polygon', coordinates: [[[30, 0], [40, 0], [40, 10], [30, 0]]],
     }));
-    expect(await screen.findByText('The boundary cannot exceed 50,000 hectares.')).toBeInTheDocument();
+    expect(await screen.findAllByText('The boundary cannot exceed 50,000 hectares.')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Save farm' })).toBeDisabled();
   });
 
@@ -159,6 +198,19 @@ describe('MapEditor', () => {
     render(<MapEditor apiError="The backend rejected this geometry." onSave={vi.fn()} />);
     expect(screen.getByRole('alert')).toHaveTextContent('The backend rejected this geometry.');
     expect(screen.getByLabelText('Interactive farm boundary map')).toBeInTheDocument();
+  });
+
+  it('closes a fallback boundary on double-click and enables confirmed save', async () => {
+    mapShouldFail = true;
+    render(<MapEditor requireBoundaryConfirmation onSave={vi.fn()} />);
+    const surface = await screen.findByLabelText('Farm boundary drawing surface');
+    for (const [clientX, clientY] of [[100, 100], [110, 100], [110, 110], [100, 110]]) {
+      fireEvent.click(surface, { clientX, clientY });
+    }
+    fireEvent.doubleClick(surface);
+    expect(screen.getByText('Boundary is ready to save.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: 'Save farm' })).toBeEnabled();
   });
 
   it('shows a drawable OpenStreetMap fallback when WebGL is unavailable', async () => {

@@ -63,6 +63,8 @@ export default function NewFarmPage() {
       </ol>
       <MapEditor
         canSave={Boolean(name.trim())}
+        farmName={name}
+        onNameChange={(value) => { setName(value); setNameError(null); }}
         isSaving={saving}
         apiError={geometryError}
         requireBoundaryConfirmation

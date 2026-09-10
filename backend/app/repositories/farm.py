@@ -10,8 +10,9 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import FarmDeleteConflict, StaleRevisionError
+from app.core.exceptions import StaleRevisionError
 from app.models.farm import Farm, FarmGeometryRevision
+from app.models.snapshot import AnalysisJob, AnalysisSnapshot
 from app.repositories.base import NotFoundError, OwnedRepository
 
 
@@ -167,28 +168,38 @@ class FarmRepository(OwnedRepository[Farm]):
             return await self.get_by_id(farm_id)
         return await self.update_name(farm_id, name)
 
-    async def _blocking_resource_types(self, farm_id: uuid.UUID) -> list[str]:
-        """Detect Phase 5 snapshot rows when that later table exists."""
-        table_name = await self.session.scalar(
-            text("SELECT to_regclass('public.analysis_snapshots')")
-        )
-        if table_name is None:
-            return []
-        has_snapshot = await self.session.scalar(
-            text(
-                "SELECT EXISTS (SELECT 1 FROM analysis_snapshots "
-                "WHERE farm_id = :farm_id)"
-            ),
-            {"farm_id": farm_id},
-        )
-        return ["analysis_snapshots"] if has_snapshot else []
-
     async def delete(self, farm_id: uuid.UUID) -> None:
-        await self.get_by_id(farm_id)
-        blockers = await self._blocking_resource_types(farm_id)
-        if blockers:
-            raise FarmDeleteConflict(blockers)
+        """Delete a farm and all farm-owned derived data in FK-safe order.
 
+        Deletion order:
+        1. analysis_snapshots (removes the RESTRICT FK that would block job deletion)
+        2. analysis_jobs cascade-delete automatically once snapshots are gone
+        3. saved_scenarios CASCADE-delete automatically with the farm
+        4. farm_geometry_revisions CASCADE-delete with the farm
+        5. Delete the farm row itself
+
+        The "Delete permanently" action is confirmed by the user; this is the
+        intended behavior.
+        """
+        await self.get_by_id(farm_id)
+
+        # 1. Delete all analysis snapshots for this farm.
+        #    AnalysisSnapshot.farm_id has ondelete=RESTRICT, so we must delete
+        #    snapshots explicitly before deleting the farm or its jobs.
+        await self.session.execute(
+            sql_delete(AnalysisSnapshot).where(AnalysisSnapshot.farm_id == farm_id)
+        )
+
+        # 2. Delete all analysis jobs for this farm.
+        #    AnalysisJob.farm_id has ondelete=CASCADE but we do this explicitly
+        #    to ensure they are gone before we delete the farm row (avoids
+        #    any trigger/constraint ordering issues across sessions).
+        await self.session.execute(
+            sql_delete(AnalysisJob).where(AnalysisJob.farm_id == farm_id)
+        )
+
+        # 3. Delete the farm. SavedScenarios and FarmGeometryRevisions will
+        #    cascade-delete automatically (both have ondelete=CASCADE).
         deleted = await self.session.execute(
             sql_delete(Farm)
             .where(Farm.id == farm_id, Farm.user_id == self.owner_id)

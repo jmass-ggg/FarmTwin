@@ -51,7 +51,7 @@ export function DeleteFarmDialog({ farmId, farmName }: { farmId: string; farmNam
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {farmName}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This permanently removes the farm and every saved boundary revision. Farms with analysis snapshots cannot be deleted.
+            This permanently removes the farm, every saved boundary revision, analysis snapshots, and all derived records. This action cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error && <p className="field-error" role="alert">{error}</p>}

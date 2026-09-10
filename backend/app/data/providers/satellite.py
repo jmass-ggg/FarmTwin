@@ -57,10 +57,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 STAC_SEARCH_URL = (
-    "https://catalogue.dataspace.copernicus.eu/stac/search"
+    "https://stac.dataspace.copernicus.eu/v1/search"
 )
 SOURCE_NAME = "sentinel-2-l2a"
-COLLECTION = "SENTINEL-2-L2A"
+COLLECTION = "sentinel-2-l2a"
 CLOUD_COVER_THRESHOLD = 30.0          # percent
 SCENE_MAX_AGE_DAYS = 30
 REQUEST_TIMEOUT_SECONDS = 30.0
@@ -252,10 +252,10 @@ async def _search_scenes(
         return features
     except httpx.HTTPStatusError as exc:
         logger.warning("STAC search returned HTTP %s: %s", exc.response.status_code, exc)
-        return []
+        raise RuntimeError(f"STAC search returned HTTP {exc.response.status_code}") from exc
     except Exception as exc:
         logger.warning("STAC search failed: %s", exc)
-        return []
+        raise RuntimeError(f"STAC search failed: {type(exc).__name__}: {exc}") from exc
 
 
 def _last_scene_age_days(features: list[dict]) -> int | None:
@@ -417,11 +417,23 @@ async def fetch(
         # -----------------------------------------------------------------
         # Step 1: Search for qualifying scenes (cloud < 30%, last 30 days)
         # -----------------------------------------------------------------
-        features = await _search_scenes(farm_polygon, client)
+        try:
+            features = await _search_scenes(farm_polygon, client)
+        except RuntimeError as exc:
+            return ProviderResult(
+                payload=_build_unavailable_payload(retrieved_at, data_mode, reason=str(exc)),
+                evidence_status=EVIDENCE_UNAVAILABLE, error_message=str(exc),
+            )
 
         if not features:
             # Try a broader search (no cloud filter) to report last_scene_age_days
-            all_features = await _search_scenes(farm_polygon, client, max_age_days=365)
+            try:
+                all_features = await _search_scenes(farm_polygon, client, max_age_days=365)
+            except RuntimeError as exc:
+                return ProviderResult(
+                    payload=_build_unavailable_payload(retrieved_at, data_mode, reason=str(exc)),
+                    evidence_status=EVIDENCE_UNAVAILABLE, error_message=str(exc),
+                )
             last_age = _last_scene_age_days(all_features)
             msg = (
                 f"No Sentinel-2 scene with cloud cover < {CLOUD_COVER_THRESHOLD}% "

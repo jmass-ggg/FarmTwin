@@ -234,3 +234,15 @@ def test_management_module_requires_explicit_command():
     
     # The main() function should require command line arguments
     # (tested indirectly - we're verifying it doesn't auto-run)
+
+
+def test_startup_expected_revision_matches_migration_head():
+    """Startup must accept the schema produced by the current migration chain."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from app.core.database import EXPECTED_ALEMBIC_HEAD
+
+    migrations = Path(__file__).resolve().parents[1] / "app/db/migrations"
+    config = Config()
+    config.set_main_option("script_location", str(migrations))
+    assert ScriptDirectory.from_config(config).get_heads() == [EXPECTED_ALEMBIC_HEAD]

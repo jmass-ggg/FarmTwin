@@ -18,7 +18,7 @@ from sqlalchemy import text
 from .config import Settings
 
 
-EXPECTED_ALEMBIC_HEAD = "0009_workflow_integrity"
+EXPECTED_ALEMBIC_HEAD = "0010_farm_delete_permissions"
 READINESS_OPERATION_SECONDS = 3.0
 READINESS_CLEANUP_SECONDS = 1.0
 

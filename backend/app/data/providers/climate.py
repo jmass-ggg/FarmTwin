@@ -5,7 +5,7 @@ Retrieves 30-year monthly means for a farm centroid location to produce
 a climatological baseline. Computes anomaly (current minus baseline)
 for temperature and rainfall when both are available.
 
-Primary source: Open-Meteo /v1/archive (ERA5-Land reanalysis)
+Primary source: Open-Meteo /v1/archive (ERA5 reanalysis)
 Baseline period: most recent 30 years ending prior to the current year.
 
 Returns a ProviderResult with a climate_baseline payload.
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 SOURCE_NAME = "open-meteo-era5"
-BASELINE_SOURCE_DESCRIPTION = "ERA5-Land reanalysis via Open-Meteo historical archive"
+BASELINE_SOURCE_DESCRIPTION = "ERA5 reanalysis via Open-Meteo historical archive"
 REQUEST_TIMEOUT_SECONDS = 30.0
 BASELINE_YEARS = 30
 
@@ -263,7 +263,7 @@ async def fetch(
         "start_date": baseline_start,
         "end_date": baseline_end,
         "daily": ",".join(ARCHIVE_DAILY_VARIABLES),
-        "models": "era5_land",
+        "models": "era5",
         "timezone": "UTC",
     }
 

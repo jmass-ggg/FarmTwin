@@ -182,6 +182,10 @@ interface MapEditorProps {
   hasExternalChanges?: boolean;
   apiError?: string | null;
   requireBoundaryConfirmation?: boolean;
+  /** Optional: current farm name value — shown inline in save row when name is missing */
+  farmName?: string;
+  /** Optional: callback when user types a name inline in the save row */
+  onNameChange?: (name: string) => void;
   onSave: (geometry: GeoJSONPolygon) => Promise<void> | void;
 }
 
@@ -192,10 +196,14 @@ export function MapEditor({
   hasExternalChanges = false,
   apiError,
   requireBoundaryConfirmation = false,
+  farmName,
+  onNameChange,
   onSave,
 }: MapEditorProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const mapReady = useRef(false);
+  const pendingCenter = useRef<Position | null>(null);
   const [coordinates, setCoordinates] = useState<Position[]>(
     () => (initialGeometry?.coordinates[0] as Position[] | undefined) ?? [],
   );
@@ -231,6 +239,19 @@ export function MapEditor({
     [coordinates, closed],
   );
   const hasUnsavedChanges = dirty || hasExternalChanges;
+  const distinctPointCount = useMemo(() => {
+    const open = closed ? coordinates.slice(0, -1) : coordinates;
+    return new Set(open.map(([lng, lat]) => `${lng},${lat}`)).size;
+  }, [coordinates, closed]);
+
+  const saveBlockingReason = !canSave ? 'Enter a farm name at the top of the page.'
+    : distinctPointCount < 3 ? `Add at least ${3 - distinctPointCount} more boundary ${3 - distinctPointCount === 1 ? 'point' : 'points'}.`
+    : !closed ? 'Double-click the map or click "Close ring" to finish the boundary.'
+    : !validationState.valid ? validationState.message
+    : requireBoundaryConfirmation && !boundaryConfirmed ? 'Tick the confirmation checkbox above.'
+    : !hasUnsavedChanges ? 'The saved boundary is unchanged.'
+    : isSaving ? 'Saving farm…' : null;
+
 
   const remember = useCallback(() => {
     history.current.push({ coordinates: structuredClone(coordinatesRef.current), closed: closedRef.current });
@@ -323,6 +344,11 @@ export function MapEditor({
         const bounds = ring.reduce((box, point) => box.extend(point), new maplibregl.LngLatBounds(ring[0], ring[0]));
         map.fitBounds(bounds, { padding: 90, maxZoom: 17, duration: 0 });
       }
+      mapReady.current = true;
+      if (pendingCenter.current) {
+        map.flyTo({ center: pendingCenter.current, zoom: 14 });
+        pendingCenter.current = null;
+      }
       setMapCursor(map, closedRef.current ? 'grab' : 'crosshair');
     });
     map.on('error', (event) => {
@@ -398,6 +424,7 @@ export function MapEditor({
       window.clearTimeout(loadTimer);
       map.remove();
       mapRef.current = null;
+      mapReady.current = false;
     };
   }, [change, remember, finishDrawing, initialCenter, initialGeometry]);
 
@@ -491,31 +518,42 @@ export function MapEditor({
 
   const searchLocation = async () => {
     const query = locationQuery.trim();
-    if (!query) return;
-    setLocationStatus('Searching…');
-    const direct = query.split(',').map(Number);
-    if (direct.length === 2 && direct.every(Number.isFinite)) {
-      const center: Position = [direct[1], direct[0]];
-      setFallbackCenter(center);
-      setFallbackZoom(14);
-      mapRef.current?.flyTo({ center, zoom: 14 });
-      setLocationStatus('Map moved to the supplied coordinates.');
+    if (!query) {
+      setLocationStatus('Enter a place or latitude, longitude.');
       return;
     }
+    setLocationStatus('Searching…');
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`,
-        { headers: { 'Accept-Language': 'en' } },
-      );
-      const matches = await response.json() as Array<{ lat: string; lon: string; display_name: string }>;
-      if (!matches[0]) throw new Error('No matching place was found.');
-      const center: Position = [Number(matches[0].lon), Number(matches[0].lat)];
+      const direct = query.split(',').map((part) => part.trim());
+      let center: Position;
+      let label: string;
+      if (direct.length === 2 && direct.every((part) => part !== '' && Number.isFinite(Number(part)))) {
+        center = [Number(direct[1]), Number(direct[0])];
+        label = 'Map moved to the supplied coordinates.';
+      } else {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`,
+          { headers: { 'Accept-Language': 'en' } },
+        );
+        if (!response.ok) throw new Error('Location search is unavailable. Please try again.');
+        const matches = await response.json() as Array<{ lat: string; lon: string; display_name: string }>;
+        if (!matches[0]) throw new Error('No matching place was found.');
+        center = [Number(matches[0].lon), Number(matches[0].lat)];
+        label = matches[0].display_name;
+      }
+      if (!center.every(Number.isFinite) || Math.abs(center[0]) > 180 || Math.abs(center[1]) > 90) {
+        throw new Error('Enter valid latitude and longitude coordinates.');
+      }
       setFallbackCenter(center);
       setFallbackZoom(14);
-      mapRef.current?.flyTo({ center, zoom: 14 });
-      setLocationStatus(matches[0].display_name);
+      pendingCenter.current = center;
+      if (mapReady.current && mapRef.current) {
+        mapRef.current.flyTo({ center, zoom: 14 });
+        pendingCenter.current = null;
+      }
+      setLocationStatus(label);
     } catch (error) {
-      setLocationStatus(error instanceof Error ? error.message : 'Location search failed.');
+      setLocationStatus(error instanceof Error ? error.message : 'Location search failed. Please try again.');
     }
   };
 
@@ -547,13 +585,13 @@ export function MapEditor({
             placeholder="Search place or enter latitude, longitude"
             value={locationQuery}
             onChange={(event) => setLocationQuery(event.target.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') void searchLocation(); }}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchLocation(); } }}
           />
           <Button type="button" variant="outline" onClick={() => void searchLocation()}>
             <LocateFixed /> Find
           </Button>
         </div>
-        {locationStatus && <output className="map-helper-text">{locationStatus}</output>}
+        <output className="map-helper-text" aria-live="polite">{locationStatus ?? 'Search for a place or enter latitude, longitude.'}</output>
       </div>
 
       <div className="map-workspace">
@@ -564,6 +602,7 @@ export function MapEditor({
         {mapMode === 'fallback' && (
           <div className="fallback-map" data-testid="fallback-map">
             <iframe
+              key={`${fallbackCenter.join(',')}-${fallbackZoom}`}
               src={fallbackMapUrl(fallbackCenter, fallbackZoom)}
               title="OpenStreetMap farm boundary map"
               loading="eager"
@@ -573,6 +612,7 @@ export function MapEditor({
               className="fallback-drawing-surface"
               aria-label="Farm boundary drawing surface"
               onClick={addFallbackVertex}
+              onDoubleClick={finishDrawing}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !closedRef.current) {
                   setCoordinates((current) => [...current, fallbackCenter]);
@@ -607,8 +647,15 @@ export function MapEditor({
               ? 'Click the map to place the first corner'
               : coordinates.length < 3
                 ? `Place ${3 - coordinates.length} more ${coordinates.length === 2 ? 'corner' : 'corners'}`
-                : 'Click Close ring, or double-click the map to finish'}
+                : 'Ready to close · double-click map or use Close ring ↙'}
         </output>
+        {!closed && coordinates.length >= 3 && (
+          <div className="map-close-ring-cta">
+            <Button type="button" size="sm" onClick={finishDrawing}>
+              <Redo2 /> Close ring to finish boundary
+            </Button>
+          </div>
+        )}
         <div className="drawing-controls" aria-label="Drawing controls">
           <Button type="button" onClick={startDrawing}><RotateCcw /> Draw boundary</Button>
           <Button type="button" variant="outline" onClick={undo} disabled={historyLength === 0}>
@@ -665,7 +712,20 @@ export function MapEditor({
       {apiError && <p className="form-error" role="alert">{apiError}</p>}
       <div className="editor-save-row">
         <div>
-          {requireBoundaryConfirmation && validationState.valid && (
+          {/* Inline name input — shown when user has scrolled past the top name field */}
+          {!canSave && onNameChange !== undefined && (
+            <div className="inline-name-field">
+              <label htmlFor="inline-farm-name" className="inline-name-label">Farm name</label>
+              <Input
+                id="inline-farm-name"
+                placeholder="Enter a name for this farm"
+                value={farmName ?? ''}
+                onChange={(e) => onNameChange(e.target.value)}
+                aria-label="Farm name"
+              />
+            </div>
+          )}
+          {requireBoundaryConfirmation && closed && coordinates.length >= 3 && (
             <label className="boundary-confirmation">
               <input
                 type="checkbox"
@@ -675,7 +735,7 @@ export function MapEditor({
               <span>I confirm this boundary represents land I own or manage.</span>
             </label>
           )}
-          <p>{hasUnsavedChanges ? 'You have unsaved changes.' : 'The saved boundary is unchanged.'}</p>
+          <p>{hasUnsavedChanges ? 'You have unsaved changes.' : initialGeometry ? 'The saved boundary is unchanged.' : 'Draw your land boundary to get started.'}</p>
         </div>
         <Button
           className="primary-button"
@@ -686,6 +746,7 @@ export function MapEditor({
           <Save /> {isSaving ? 'Saving farm…' : 'Save farm'}
         </Button>
       </div>
+      {saveBlockingReason && <p className="map-save-blocker" role="status">{saveBlockingReason}</p>}
     </section>
   );
 }

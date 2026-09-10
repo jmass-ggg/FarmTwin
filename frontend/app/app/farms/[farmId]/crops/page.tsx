@@ -372,7 +372,7 @@ export default function CropSimulatorPage() {
       </div>
 
       {/* Scenario controls — only shown when snapshot is available (Req 4.4) */}
-      {snapshotId && (
+      {snapshotId ? (
         <ScenarioControls
           rainfall={draftRainfall}
           temperature={draftTemperature}
@@ -384,6 +384,13 @@ export default function CropSimulatorPage() {
           onApply={() => void handleScenarioApply()}
           onReset={handleScenarioReset}
         />
+      ) : !loading && !error && dataMode !== null && (
+        <div className="scenario-unavailable-notice workspace-card" role="status">
+          <p>
+            <strong>Climate What-If requires a completed farm snapshot.</strong>{' '}
+            Run an analysis from the farm twin page to unlock scenario controls.
+          </p>
+        </div>
       )}
 
       {/* Error states */}

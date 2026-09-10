@@ -41,7 +41,18 @@ export function ScenarioControls({
           <p className="section-kicker">Climate what-if</p>
           <h2 id="scenario-title">Test a possible season</h2>
         </div>
-        <span>Baseline stays unchanged</span>
+        <span>
+          {rainfall === 0 && temperature === 0 && (!irrigationMm || irrigationMm === '')
+            ? 'Baseline (no changes)'
+            : [
+                rainfall !== 0 && `${rainfall > 0 ? '+' : ''}${rainfall}% rain`,
+                temperature !== 0 && `${temperature > 0 ? '+' : ''}${temperature}°C`,
+                irrigationMm && irrigationMm !== '' && `${irrigationMm} mm irrigation`,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+          }
+        </span>
       </div>
       <div className="scenario-control-grid">
         <div className="scenario-slider">
