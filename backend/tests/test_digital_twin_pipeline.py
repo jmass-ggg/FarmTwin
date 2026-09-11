@@ -306,7 +306,7 @@ async def test_stac_missing_bands_returns_unavailable_with_diagnostic():
         new=AsyncMock(return_value=[fake_scene]),
     ), patch(
         "app.data.providers.satellite._fetch_cdse_token",
-        new=AsyncMock(return_value="dummy-token-for-test"),
+        new=AsyncMock(return_value=("dummy-token-for-test", None)),
     ):
         result = await satellite_provider.fetch(
             farm_polygon=Polygon([
