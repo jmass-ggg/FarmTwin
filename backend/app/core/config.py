@@ -276,6 +276,21 @@ class Settings(BaseSettings):
     # Redis URL for the analysis job queue (worker process)
     redis_url: str = "redis://localhost:6379"
 
+    # Copernicus Data Space Ecosystem (CDSE) credentials for satellite band downloads.
+    # Register free at https://dataspace.copernicus.eu/ then set both vars.
+    # When blank, satellite band downloads will fail with 401 and the stage
+    # will resolve to evidence_status="unavailable" (non-fatal).
+    cdse_username: str = ""
+    cdse_password: SecretStr = SecretStr("")
+
+    # Conduit station coordinates — used when seeding the fixture station row.
+    # Set to the physical location of your Conduit hardware (WGS84).
+    # Defaults are for the demo station co-located with Sentinel-2 tile T37MBU
+    # (central Kenya highlands, ~0.3°S / 36.8°E, ~1800 m elevation).
+    conduit_station_latitude: float = -0.3
+    conduit_station_longitude: float = 36.8
+    conduit_station_elevation_m: float = 1800.0
+
     # Logging
     log_level: str = "INFO"
 

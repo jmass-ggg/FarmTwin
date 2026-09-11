@@ -310,6 +310,8 @@ async def run_analysis_job(
             satellite.fetch(
                 farm_polygon=polygon_shape,
                 data_mode=data_mode,
+                cdse_username=settings.cdse_username,
+                cdse_password=settings.cdse_password.get_secret_value(),
             ),
         ),
         _safe_fetch(

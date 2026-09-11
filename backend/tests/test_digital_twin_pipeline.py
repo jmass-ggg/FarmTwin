@@ -304,6 +304,9 @@ async def test_stac_missing_bands_returns_unavailable_with_diagnostic():
     with patch(
         "app.data.providers.satellite._search_scenes",
         new=AsyncMock(return_value=[fake_scene]),
+    ), patch(
+        "app.data.providers.satellite._fetch_cdse_token",
+        new=AsyncMock(return_value="dummy-token-for-test"),
     ):
         result = await satellite_provider.fetch(
             farm_polygon=Polygon([
@@ -311,6 +314,8 @@ async def test_stac_missing_bands_returns_unavailable_with_diagnostic():
                 (36.805, -1.295), (36.80, -1.30),
             ]),
             data_mode="live",
+            cdse_username="test@example.com",
+            cdse_password="testpass",
         )
 
     assert result.evidence_status == EVIDENCE_UNAVAILABLE

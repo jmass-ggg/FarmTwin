@@ -57,21 +57,40 @@ class IngestionError(Exception):
     """Raised when an ingestion run fails unrecoverably."""
 
 
-async def _get_or_create_station(session: AsyncSession) -> Station:
-    """Return the fixture station, creating it if it doesn't exist yet."""
+async def _get_or_create_station(session: AsyncSession, settings: Settings) -> Station:
+    """Return the fixture station, creating it if it doesn't exist yet.
+
+    Coordinates are taken from settings so they can be configured per-deployment
+    without touching code. If the row already exists but lacks coordinates
+    (created by an older version), update it in place.
+    """
     result = await session.execute(
         select(Station).where(
             Station.provider_station_id == _FIXTURE_STATION_PROVIDER_ID
         )
     )
     station = result.scalar_one_or_none()
+
+    lat = settings.conduit_station_latitude
+    lon = settings.conduit_station_longitude
+    elev = settings.conduit_station_elevation_m
+
     if station is not None:
+        # Back-fill coordinates if they were missing (idempotent).
+        if station.latitude is None or station.longitude is None:
+            station.latitude = lat
+            station.longitude = lon
+            station.elevation_m = elev
+            await session.flush()
         return station
 
     station = Station(
         provider_station_id=_FIXTURE_STATION_PROVIDER_ID,
         name=_FIXTURE_STATION_NAME,
         provider="conduit",
+        latitude=lat,
+        longitude=lon,
+        elevation_m=elev,
     )
     session.add(station)
     await session.flush()  # assign UUID without committing
@@ -224,7 +243,7 @@ async def ingest_fixture(
             # ------------------------------------------------------------------
             # Get or create station
             # ------------------------------------------------------------------
-            station = await _get_or_create_station(session)
+            station = await _get_or_create_station(session, settings)
 
             # ------------------------------------------------------------------
             # Create IngestionRun (status=running)  (Requirement 10.1, 10.2)

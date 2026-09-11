@@ -65,6 +65,13 @@ CLOUD_COVER_THRESHOLD = 30.0          # percent
 SCENE_MAX_AGE_DAYS = 30
 REQUEST_TIMEOUT_SECONDS = 30.0
 
+# CDSE token endpoint (Keycloak resource-owner password flow, public client)
+CDSE_TOKEN_URL = (
+    "https://identity.dataspace.copernicus.eu"
+    "/auth/realms/CDSE/protocol/openid-connect/token"
+)
+CDSE_CLIENT_ID = "cdse-public"
+
 # Copernicus Data Space STAC asset key candidates per logical band.
 # The catalog exposes resolution-suffixed keys (e.g. "B04_10m") as the
 # primary assets.  Semantic / legacy keys ("B04", "red", "B4") are kept
@@ -200,10 +207,106 @@ def _find_asset_href(assets: dict, band_keys: list[str]) -> str | None:
     return None
 
 
-async def _download_band_bytes(href: str, client: httpx.AsyncClient) -> bytes | None:
-    """Download a raster band from a signed URL. Returns None on failure."""
+async def _fetch_cdse_token(
+    username: str,
+    password: str,
+    client: httpx.AsyncClient,
+) -> tuple[str | None, str | None]:
+    """Obtain a short-lived CDSE access token via resource-owner password flow.
+
+    Returns (access_token, None) on success or (None, reason_string) on failure.
+    The token is valid for ~600 seconds; callers use it for the duration of
+    one job run and do not cache it across jobs.
+
+    Common CDSE error descriptions and their meaning:
+      "Account is not fully set up"   — account registered but Terms of Service
+                                        not yet accepted at dataspace.copernicus.eu
+      "Invalid user credentials"      — wrong username or password
+      "Account disabled"              — account suspended by CDSE
+
+    Requirements: 4.1 (download authentication)
+    """
+    if not username or not password:
+        reason = (
+            "CDSE credentials not configured. "
+            "Set CDSE_USERNAME and CDSE_PASSWORD in .env."
+        )
+        logger.warning(
+            "provider=cdse component=satellite stage=authentication "
+            "error_type=missing_credentials message=%r",
+            reason,
+        )
+        return None, reason
+
     try:
-        response = await client.get(href, timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=True)
+        resp = await client.post(
+            CDSE_TOKEN_URL,
+            data={
+                "grant_type": "password",
+                "client_id": CDSE_CLIENT_ID,
+                "username": username,
+                "password": password,
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        token: str = resp.json()["access_token"]
+        logger.debug("provider=cdse stage=authentication status=ok")
+        return token, None
+
+    except httpx.HTTPStatusError as exc:
+        # Extract the human-readable CDSE error_description when available
+        cdse_desc = ""
+        try:
+            body = exc.response.json()
+            cdse_desc = body.get("error_description") or body.get("error") or ""
+        except Exception:
+            cdse_desc = exc.response.text[:120]
+
+        http_status = exc.response.status_code
+        reason = (
+            f"CDSE authentication failed (HTTP {http_status}): {cdse_desc}. "
+            f"Username: {username}. "
+            "If the error is 'Account is not fully set up', accept the Terms of Service "
+            "at https://dataspace.copernicus.eu and complete your profile."
+        )
+        logger.warning(
+            "provider=cdse component=satellite stage=authentication "
+            "error_type=http_%d cdse_error=%r message=%r",
+            http_status, cdse_desc, reason,
+        )
+        return None, reason
+
+    except Exception as exc:
+        reason = f"CDSE authentication error: {type(exc).__name__}: {exc}"
+        logger.warning(
+            "provider=cdse component=satellite stage=authentication "
+            "error_type=%s message=%r",
+            type(exc).__name__, reason,
+        )
+        return None, reason
+
+
+async def _download_band_bytes(
+    href: str,
+    client: httpx.AsyncClient,
+    token: str | None = None,
+) -> bytes | None:
+    """Download a raster band from a CDSE OData URL.
+
+    Attaches a Bearer token when one is available.
+    Returns None on any failure (HTTP error, timeout, network).
+    """
+    headers: dict[str, str] = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = await client.get(
+            href,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            follow_redirects=True,
+            headers=headers,
+        )
         response.raise_for_status()
         return response.content
     except Exception as exc:
@@ -425,6 +528,8 @@ def _build_success_payload(
 async def fetch(
     farm_polygon: Polygon,
     data_mode: str = "live",
+    cdse_username: str = "",
+    cdse_password: str = "",
 ) -> ProviderResult:
     """Fetch satellite data for the farm polygon.
 
@@ -435,11 +540,13 @@ async def fetch(
     Args:
         farm_polygon: Shapely Polygon in WGS84 (EPSG:4326).
         data_mode: Provenance data mode label.
+        cdse_username: Copernicus Data Space Ecosystem account email.
+        cdse_password: CDSE account password.
 
     Returns:
         ProviderResult with satellite payload and evidence_status="accepted",
-        or evidence_status="unavailable" when no qualifying scene exists or
-        the data source is unreachable.
+        or evidence_status="unavailable" when no qualifying scene exists,
+        credentials are missing, or the data source is unreachable.
 
     Never raises; all errors are captured.
 
@@ -448,6 +555,18 @@ async def fetch(
     retrieved_at = _iso_now()
 
     async with httpx.AsyncClient() as client:
+        # -----------------------------------------------------------------
+        # Step 0: Obtain CDSE access token for authenticated band downloads
+        # -----------------------------------------------------------------
+        token, token_error = await _fetch_cdse_token(cdse_username, cdse_password, client)
+        if not token:
+            msg = token_error or "CDSE access token could not be obtained."
+            return ProviderResult(
+                payload=_build_unavailable_payload(retrieved_at, data_mode, reason=msg),
+                evidence_status=EVIDENCE_UNAVAILABLE,
+                error_message=msg,
+            )
+
         # -----------------------------------------------------------------
         # Step 1: Search for qualifying scenes (cloud < 30%, last 30 days)
         # -----------------------------------------------------------------
@@ -521,8 +640,8 @@ async def fetch(
             )
 
         b4_bytes, b8_bytes = await _download_band_bytes(
-            b4_href, client
-        ), await _download_band_bytes(b8_href, client)
+            b4_href, client, token
+        ), await _download_band_bytes(b8_href, client, token)
 
         if b4_bytes is None or b8_bytes is None:
             msg = f"Scene {scene_id}: Failed to download Band 4 or Band 8."
@@ -569,8 +688,8 @@ async def fetch(
         b11_href = _find_asset_href(assets, _BAND_ASSET_KEYS["B11"])
 
         if b8a_href and b11_href:
-            b8a_bytes = await _download_band_bytes(b8a_href, client)
-            b11_bytes = await _download_band_bytes(b11_href, client)
+            b8a_bytes = await _download_band_bytes(b8a_href, client, token)
+            b11_bytes = await _download_band_bytes(b11_href, client, token)
             if b8a_bytes and b11_bytes:
                 b8a_array = _clip_and_read_band(b8a_bytes, farm_polygon)
                 b11_array = _clip_and_read_band(b11_bytes, farm_polygon)
