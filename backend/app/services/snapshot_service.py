@@ -270,7 +270,14 @@ async def run_analysis_job(
         try:
             async with asyncio.timeout(300):
                 result = await coro
-            await update_stage(name, _stage_done(started, _iso_now()) if result.evidence_status == EVIDENCE_ACCEPTED else _stage_failed(started, _iso_now(), result.error_message or result.evidence_status))
+            now = _iso_now()
+            if result.evidence_status == EVIDENCE_ACCEPTED:
+                stage_entry = _stage_done(started, now)
+            else:
+                # unavailable / ineligible are valid terminal states — not an error
+                error_detail = result.error_message or result.evidence_status
+                stage_entry = _stage_failed(started, now, error_detail)
+            await update_stage(name, stage_entry)
             return name, result
         except Exception as exc:
             msg = f"{name} adapter raised unexpectedly: {exc}"
@@ -326,13 +333,18 @@ async def run_analysis_job(
     if data_mode == "live":
         raw_results = await asyncio.gather(*tasks, return_exceptions=False)
     else:
-        # Close unused coroutine objects, including provider coroutines captured by wrappers.
-        for task in tasks:
-            task.cr_frame.f_locals["coro"].close()
-            task.close()
-        raw_results = [(name, ProviderResult(payload=None, evidence_status=EVIDENCE_UNAVAILABLE,
-                       error_message="Live acquisition is disabled in this data mode."))
-                       for name in ("weather", "climate", "satellite", "soil", "terrain")]
+        # Non-live mode: cancel the provider coroutines cleanly and return
+        # unavailable results for all stages without making any external calls.
+        for task_coro in tasks:
+            task_coro.close()
+        raw_results = [
+            (name, ProviderResult(
+                payload=None,
+                evidence_status=EVIDENCE_UNAVAILABLE,
+                error_message="Live acquisition is disabled in this data mode.",
+            ))
+            for name in ("weather", "climate", "satellite", "soil", "terrain")
+        ]
 
 
     adapter_results: dict[str, ProviderResult] = dict(raw_results)
@@ -384,19 +396,20 @@ async def run_analysis_job(
                 if db_job.status == JobStatus.COMPLETED or db_job.attempts != attempt:
                     return None
 
-                # Build per-stage completion info
+                # Build per-stage completion — use the final adapter_results
+                # so the committed stage dict matches what actually happened.
                 completion_now = _iso_now()
-                completed_stages: dict[str, dict] = {}
+                final_stages: dict[str, dict] = {}
                 for stage_name, pr in adapter_results.items():
                     if pr.evidence_status == EVIDENCE_ACCEPTED:
-                        completed_stages[stage_name] = _stage_done(job_start, completion_now)
+                        final_stages[stage_name] = _stage_done(job_start, completion_now)
                     else:
-                        completed_stages[stage_name] = _stage_failed(
+                        final_stages[stage_name] = _stage_failed(
                             job_start,
                             completion_now,
                             pr.error_message or pr.evidence_status,
                         )
-                db_job.stages = completed_stages
+                db_job.stages = final_stages
 
                 snapshot = AnalysisSnapshot(
                     id=uuid.uuid4(),
@@ -417,8 +430,18 @@ async def run_analysis_job(
                 persist_session.add(snapshot)
                 await persist_session.flush()
 
-                from app.services.planner_service import generate_proposals
-                await generate_proposals(persist_session, snapshot)
+                try:
+                    from app.services.planner_service import generate_proposals
+                    await generate_proposals(persist_session, snapshot)
+                except Exception as proposal_exc:
+                    # Proposals are best-effort — a proposal generation failure
+                    # must not prevent the snapshot from being saved.
+                    logger.warning(
+                        "generate_proposals failed for snapshot %s (non-fatal): %s",
+                        snapshot.id,
+                        proposal_exc,
+                    )
+
                 db_job.lease_until = None
                 db_job.status = JobStatus.COMPLETED
                 db_job.snapshot_id = snapshot.id

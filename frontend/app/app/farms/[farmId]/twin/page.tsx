@@ -557,6 +557,10 @@ export default function FarmTwinPage() {
     setActionError(null);
     try {
       await triggerAnalysis(farmId);
+      // Reset twin state so the previous snapshot does not bleed through
+      // while the new job is pending.
+      setTwin(null);
+      setJobProgress(null);
       reloadTwin();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Analysis could not be started.');

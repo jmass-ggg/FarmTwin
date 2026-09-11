@@ -10,7 +10,9 @@ Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 from datetime import datetime, timezone
 from typing import Any
 
@@ -56,6 +58,12 @@ _UNITS: dict[str, str] = {
     "wind_direction_10m": "degrees",
     "cloud_cover": "percent",
 }
+
+# Retry config for transient server errors (5xx, 429)
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+_MAX_RETRIES = 3
+_RETRY_BASE_SECONDS = 2.0
+_RETRY_MAX_SECONDS = 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -164,39 +172,68 @@ async def fetch(
         "timezone": "UTC",
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            response = await client.get(OPEN_METEO_FORECAST_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
-    except httpx.TimeoutException as exc:
-        msg = f"Open-Meteo request timed out after {REQUEST_TIMEOUT_SECONDS}s: {exc}"
-        logger.warning(msg)
-        return ProviderResult(
-            payload=_build_unavailable_payload(retrieved_at, data_mode),
-            evidence_status=EVIDENCE_UNAVAILABLE,
-            error_message=msg,
-        )
-    except httpx.HTTPStatusError as exc:
-        msg = f"Open-Meteo returned HTTP {exc.response.status_code}"
-        logger.warning(msg)
-        return ProviderResult(
-            payload=_build_unavailable_payload(retrieved_at, data_mode),
-            evidence_status=EVIDENCE_UNAVAILABLE,
-            error_message=msg,
-        )
-    except Exception as exc:
-        msg = f"Open-Meteo request failed: {exc}"
-        logger.warning(msg)
-        return ProviderResult(
-            payload=_build_unavailable_payload(retrieved_at, data_mode),
-            evidence_status=EVIDENCE_UNAVAILABLE,
-            error_message=msg,
-        )
+    last_error: str = "Unknown error"
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                response = await client.get(OPEN_METEO_FORECAST_URL, params=params)
 
-    payload = _build_weather_payload(data, retrieved_at, data_mode)
+                # Handle Retry-After header on 429
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    wait = float(retry_after) if retry_after and retry_after.isdigit() else _RETRY_BASE_SECONDS * attempt
+                    logger.warning(
+                        "Open-Meteo rate-limited (429), attempt %d/%d, waiting %.1fs",
+                        attempt, _MAX_RETRIES, wait,
+                    )
+                    if attempt < _MAX_RETRIES:
+                        await asyncio.sleep(min(wait, _RETRY_MAX_SECONDS))
+                        continue
+                    last_error = f"Open-Meteo rate-limited (429) after {attempt} attempts"
+                    break
+
+                if response.status_code in _RETRYABLE_STATUS_CODES:
+                    last_error = f"Open-Meteo returned HTTP {response.status_code}"
+                    logger.warning(
+                        "%s, attempt %d/%d", last_error, attempt, _MAX_RETRIES
+                    )
+                    if attempt < _MAX_RETRIES:
+                        wait = min(
+                            _RETRY_BASE_SECONDS * (2 ** (attempt - 1)) + random.uniform(0, 1),
+                            _RETRY_MAX_SECONDS,
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    break
+
+                response.raise_for_status()
+                data = response.json()
+                payload = _build_weather_payload(data, retrieved_at, data_mode)
+                return ProviderResult(
+                    payload=payload,
+                    evidence_status=EVIDENCE_ACCEPTED,
+                    error_message=None,
+                )
+
+            except httpx.TimeoutException as exc:
+                last_error = f"Open-Meteo request timed out after {REQUEST_TIMEOUT_SECONDS}s: {exc}"
+                logger.warning("%s, attempt %d/%d", last_error, attempt, _MAX_RETRIES)
+                if attempt < _MAX_RETRIES:
+                    wait = min(_RETRY_BASE_SECONDS * attempt, _RETRY_MAX_SECONDS)
+                    await asyncio.sleep(wait)
+                    continue
+                break
+            except httpx.HTTPStatusError as exc:
+                last_error = f"Open-Meteo returned HTTP {exc.response.status_code}"
+                logger.warning(last_error)
+                break
+            except Exception as exc:
+                last_error = f"Open-Meteo request failed: {exc}"
+                logger.warning(last_error)
+                break
+
     return ProviderResult(
-        payload=payload,
-        evidence_status=EVIDENCE_ACCEPTED,
-        error_message=None,
+        payload=_build_unavailable_payload(retrieved_at, data_mode),
+        evidence_status=EVIDENCE_UNAVAILABLE,
+        error_message=last_error,
     )

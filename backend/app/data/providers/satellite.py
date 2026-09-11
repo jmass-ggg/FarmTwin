@@ -65,12 +65,17 @@ CLOUD_COVER_THRESHOLD = 30.0          # percent
 SCENE_MAX_AGE_DAYS = 30
 REQUEST_TIMEOUT_SECONDS = 30.0
 
-# Copernicus Data Space asset keys for each band
+# Copernicus Data Space STAC asset key candidates per logical band.
+# The catalog exposes resolution-suffixed keys (e.g. "B04_10m") as the
+# primary assets.  Semantic / legacy keys ("B04", "red", "B4") are kept
+# as fallbacks for other STAC catalogs.
+#
+# Key lookup order matters: most-specific first.
 _BAND_ASSET_KEYS = {
-    "B04": ["B04", "red", "B4"],
-    "B08": ["B08", "nir", "B8"],
-    "B8A": ["B8A", "nir08"],
-    "B11": ["B11", "swir16"],
+    "B04": ["B04_10m", "B04_20m", "B04", "red", "B4"],
+    "B08": ["B08_10m", "B08", "nir", "B8"],
+    "B8A": ["B8A_20m", "B8A_60m", "B8A", "nir08"],
+    "B11": ["B11_20m", "B11_60m", "B11", "swir16"],
 }
 
 # Nominal spatial resolutions (m)
@@ -156,13 +161,42 @@ def _pixel_stats(
 
 
 def _find_asset_href(assets: dict, band_keys: list[str]) -> str | None:
-    """Find the download URL for a band given a list of possible asset key names."""
+    """Find the best download URL for a band given a list of possible asset key names.
+
+    Copernicus Data Space STAC exposes assets with resolution-suffixed keys
+    (e.g. "B04_10m") and S3 URIs as the primary href.  The publicly-accessible
+    HTTPS download URL is nested under ``asset["alternate"]["https"]["href"]``.
+
+    Priority order:
+      1. asset["alternate"]["https"]["href"]   — public HTTPS (may need auth)
+      2. asset["href"]  if it starts with https://  — direct HTTPS
+      3. asset["alternate"]["s3"]["href"]      — S3 (requires signed URL / IAM)
+
+    Logs the keys tried so failures are diagnosable.
+    """
     for key in band_keys:
-        if key in assets:
-            asset = assets[key]
-            href = asset.get("href") or asset.get("alternate", {}).get("s3", {}).get("href")
-            if href:
-                return href
+        if key not in assets:
+            continue
+        asset = assets[key]
+        # Prefer the HTTPS alternate (Copernicus Data Space pattern)
+        https_href = (
+            asset.get("alternate", {}).get("https", {}).get("href")
+        )
+        if https_href:
+            logger.debug("Resolved band key %r → alternate HTTPS href", key)
+            return https_href
+        # Fall back to primary href if it is already HTTPS
+        primary = asset.get("href", "")
+        if primary.startswith("https://"):
+            logger.debug("Resolved band key %r → primary HTTPS href", key)
+            return primary
+    # Nothing found — log what was available to help diagnose
+    available = list(assets.keys())
+    logger.debug(
+        "_find_asset_href: tried keys %s; available asset keys: %s",
+        band_keys,
+        available,
+    )
     return None
 
 
@@ -470,7 +504,11 @@ async def fetch(
         b8_href = _find_asset_href(assets, _BAND_ASSET_KEYS["B08"])
 
         if not b4_href or not b8_href:
-            msg = f"Scene {scene_id}: Band 4 or Band 8 asset href not found in STAC response."
+            available_keys = sorted(assets.keys())
+            msg = (
+                f"Scene {scene_id}: Band 4 or Band 8 asset href not found in STAC response. "
+                f"Available asset keys: {available_keys}"
+            )
             logger.warning(msg)
             return ProviderResult(
                 payload=_build_unavailable_payload(
