@@ -18,12 +18,12 @@ from sqlalchemy import desc, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings
 from app.core.exceptions import FarmValidationError, NotFoundError
 from app.core.security import Principal
 from app.domain.risk_engine import RiskResponse, assess_all
 from app.domain.risk_rules import ACTION_RULES
 from app.domain.snapshot_context import context_from_demonstration, context_for_risks
-from app.core.config import Settings
 from app.models.actions import ActionCompletion
 from app.models.farm import Farm
 from app.models.snapshot import AnalysisSnapshot
@@ -74,6 +74,7 @@ async def get_risks(
     session: AsyncSession,
     principal: Principal,
     farm_id: UUID,
+    settings: Settings,
 ) -> RiskResponse:
     """
     Load the farm, build a SnapshotContext, assess all 5 hazards, and overlay
@@ -109,7 +110,7 @@ async def get_risks(
             snapshot.data_mode,
         )
     else:
-        if Settings().data_mode.value != "demonstration":
+        if settings.data_mode.value != "demonstration":
             raise NotFoundError("No analysis snapshot available. Run farm analysis first.")
         # Explicit demonstration mode only
         context = context_from_demonstration(

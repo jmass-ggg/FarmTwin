@@ -9,6 +9,9 @@ Validates: Requirements 2.2, 2.3, 2.4, 3.2, 3.3, 3.4, 4.2, 4.3, 4.4, 6.2, 6.3, 6
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
 from hypothesis import given, settings, strategies as st
 
 from app.domain.risk_engine import (
@@ -21,14 +24,16 @@ from app.domain.risk_engine import (
     LEVEL_HIGH,
     LEVEL_LOW,
     LEVEL_MEDIUM,
+    LEVEL_UNKNOWN,
     _assess_drought,
+    _assess_flood,
     _assess_heat,
     _assess_heavy_rainfall,
     _assess_wind,
     WIND_HIGH_MS,
     WIND_MEDIUM_MS,
 )
-from app.domain.snapshot_context import SnapshotContext
+from app.domain.snapshot_context import SnapshotContext, context_for_risks
 
 
 # ---------------------------------------------------------------------------
@@ -208,3 +213,79 @@ def test_property_1_wind_level_matches_threshold(wind_max: float) -> None:
         f"Wind level mismatch: wind_max={wind_max:.2f} m/s. "
         f"Expected {expected!r}, got {result.level!r}."
     )
+
+
+def test_drought_index_is_bounded_monotonic_and_does_not_claim_ndvi_decline() -> None:
+    rainfall_values = [150.0, 100.0, 80.0, 60.0, 30.0, 0.0]
+    results = [
+        _assess_drought(
+            _make_context(
+                rainfall_total_mm=rainfall,
+                climate_baseline_rainfall_mm=100.0,
+                ndvi_mean=0.2,
+            )
+        )
+        for rainfall in rainfall_values
+    ]
+
+    assert [result.index for result in results] == [0, 0, 20, 40, 70, 100]
+    assert all(0 <= result.index <= 100 for result in results)
+    assert all(result.driver != "ndvi_decline" for result in results)
+    assert results[2].driver == "low_ndvi"
+    assert "ratio" not in results[0].explanation
+    assert "above baseline" in results[0].explanation
+    assert "rainfall deficit" in results[-1].explanation
+
+
+def test_missing_critical_evidence_stays_unknown() -> None:
+    assert _assess_drought(_make_context()).level == LEVEL_UNKNOWN
+    assert _assess_heat(_make_context()).level == LEVEL_UNKNOWN
+    assert _assess_heavy_rainfall(_make_context()).level == LEVEL_UNKNOWN
+    assert _assess_flood(_make_context(), LEVEL_LOW).level == LEVEL_UNKNOWN
+    assert _assess_wind(_make_context()).level == LEVEL_UNKNOWN
+
+
+def test_hazard_indices_are_bounded_and_monotonic() -> None:
+    heat = [_assess_heat(_make_context(temperature_mean_c=value)).index for value in (0, 20, 30, 33, 40, 60)]
+    heavy_rain = [_assess_heavy_rainfall(_make_context(rain_7d_mm=value)).index for value in (0, 60, 120, 240)]
+    wind = [_assess_wind(_make_context(wind_max_ms=value)).index for value in (0, 8, 15, 20, 40)]
+
+    assert heat == sorted(heat)
+    assert heavy_rain == sorted(heavy_rain)
+    assert wind == sorted(wind)
+    assert all(0 <= index <= 100 for index in (*heat, *heavy_rain, *wind))
+
+
+def test_risk_context_converts_monthly_climate_totals_to_matched_seven_days() -> None:
+    snapshot = SimpleNamespace(
+        id="snapshot-id",
+        data_mode="live",
+        valid_time_utc=datetime(2026, 9, 28, tzinfo=UTC),
+        climate_baseline={
+            "aggregation_version": "monthly-totals-v2",
+            "all_monthly_means": {
+                "temperature_2m_mean": {"9": 20.0, "10": 20.0},
+                "precipitation_sum": {"9": 30.0, "10": 62.0},
+            },
+        },
+        weather={
+            "fields": {
+                "temperature_2m": {"value": 20.0, "quality": "accepted", "data_mode": "live"},
+            },
+            "daily": {
+                "precipitation_sum": [1.0] * 7,
+                "wind_speed_10m_max": [3.6] * 7,
+            },
+            "daily_units": {"wind_speed_10m_max": "km/h"},
+        },
+        soil={},
+        satellite={},
+        conduit={},
+        terrain={},
+    )
+
+    context = context_for_risks(snapshot)
+
+    # Sep 28–30: 30 mm / 30 days, Oct 1–4: 62 mm / 31 days.
+    assert context.climate_baseline_rainfall_mm == 11.0
+    assert context.rainfall_total_mm == 7.0

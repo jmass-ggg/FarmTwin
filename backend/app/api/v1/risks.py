@@ -20,7 +20,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_principal, get_request_session
+from app.api.dependencies import (
+    get_app_settings,
+    get_current_principal,
+    get_request_session,
+)
 from app.api.schemas import ErrorResponse
 from app.api.v1.risk_schemas import (
     ActionCompletionResponse,
@@ -28,10 +32,11 @@ from app.api.v1.risk_schemas import (
     HazardAssessmentResponse,
     RiskResponse,
 )
+from app.core.config import Settings
 from app.core.security import Principal
-from app.models.actions import ActionCompletion
 from app.domain.risk_engine import HazardAssessment, RiskResponse as DomainRiskResponse
 from app.domain.risk_rules import ActionRule
+from app.models.actions import ActionCompletion
 from app.services import risk_service
 
 router = APIRouter(tags=["Risk Center"])
@@ -137,6 +142,7 @@ async def get_farm_risks(
     farm_id: UUID,
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_request_session),
+    settings: Settings = Depends(get_app_settings),
 ) -> RiskResponse:
     """
     GET /api/v1/farms/{farm_id}/risks
@@ -151,6 +157,7 @@ async def get_farm_risks(
         session=session,
         principal=principal,
         farm_id=farm_id,
+        settings=settings,
     )
 
     # Load action completions to overlay on each assessment's action list

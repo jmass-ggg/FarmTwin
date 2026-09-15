@@ -1,11 +1,13 @@
 'use client';
 
 import {
+  CalendarDays,
   CheckCircle2,
   Circle,
   CloudRain,
+  Database,
   Droplets,
-  Info,
+  MapPinned,
   ShieldAlert,
   ThermometerSun,
   Waves,
@@ -25,9 +27,7 @@ import {
   getFarmRisks,
 } from '@/lib/api/risks';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const HAZARD_ORDER = ['flood_exposure', 'drought', 'heat', 'heavy_rainfall', 'wind'];
 
 function hazardLabel(hazard: string): string {
   const labels: Record<string, string> = {
@@ -40,22 +40,33 @@ function hazardLabel(hazard: string): string {
   return labels[hazard] ?? hazard.replace(/_/g, ' ');
 }
 
+function selectorLabel(hazard: string): string {
+  const labels: Record<string, string> = {
+    flood_exposure: 'Flood Risk',
+    drought: 'Drought',
+    heat: 'Heat',
+    heavy_rainfall: 'Rainfall',
+    wind: 'Wind',
+  };
+  return labels[hazard] ?? hazardLabel(hazard);
+}
+
 function horizonLabel(horizon: string): string {
   const labels: Record<string, string> = {
     current: 'Current conditions',
-    short_term: '7-day outlook',
+    short_term: 'Next 7 days',
     seasonal: 'Seasonal',
   };
-  return labels[horizon] ?? horizon;
+  return labels[horizon] ?? horizon.replace(/_/g, ' ');
 }
 
-function dateModeLabel(dataMode: string, snapshotId: string | null): string {
-  if (dataMode === 'demonstration') return 'Demonstration index';
-  if (snapshotId) {
-    const short = snapshotId.slice(0, 8);
-    return `Snapshot-backed · ${short}…`;
-  }
-  return 'Snapshot-backed';
+function orderedAssessments(assessments: HazardAssessment[]): HazardAssessment[] {
+  return [...assessments].sort((left, right) => {
+    const leftIndex = HAZARD_ORDER.indexOf(left.hazard);
+    const rightIndex = HAZARD_ORDER.indexOf(right.hazard);
+    return (leftIndex === -1 ? HAZARD_ORDER.length : leftIndex) -
+      (rightIndex === -1 ? HAZARD_ORDER.length : rightIndex);
+  });
 }
 
 function HazardIcon({ hazard }: { hazard: string }) {
@@ -67,25 +78,13 @@ function HazardIcon({ hazard }: { hazard: string }) {
   return <ShieldAlert aria-hidden="true" />;
 }
 
-// ---------------------------------------------------------------------------
-// Level badge
-// ---------------------------------------------------------------------------
-
 function LevelBadge({ level }: { level: HazardAssessment['level'] }) {
   return (
-    <b
-      className="risk-level-badge"
-      data-level={level.toLowerCase()}
-      aria-label={`Hazard level: ${level}`}
-    >
+    <b className="risk-level-badge" data-level={level.toLowerCase()} aria-label={`Hazard level: ${level}`}>
       {level}
     </b>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Action row
-// ---------------------------------------------------------------------------
 
 interface ActionRowProps {
   action: ActionRule;
@@ -103,7 +102,7 @@ function ActionRow({ action, farmId, onComplete }: ActionRowProps) {
       const result = await completeAction(farmId, action.id);
       onComplete(action.id, result.completed_at);
     } catch {
-      // silently ignore — UI remains unchanged
+      // Keep the action available when the request fails.
     } finally {
       setBusy(false);
     }
@@ -119,17 +118,11 @@ function ActionRow({ action, farmId, onComplete }: ActionRowProps) {
         disabled={action.completed || busy}
         onClick={() => void handleToggle()}
       >
-        {action.completed ? (
-          <CheckCircle2 aria-hidden="true" />
-        ) : (
-          <Circle aria-hidden="true" />
-        )}
+        {action.completed ? <CheckCircle2 aria-hidden="true" /> : <Circle aria-hidden="true" />}
       </button>
       <div className="action-content">
         <div className="action-meta">
-          <span className="action-priority" aria-label={`Priority ${action.priority}`}>
-            P{action.priority}
-          </span>
+          <span className="action-priority" aria-label={`Priority ${action.priority}`}>P{action.priority}</span>
           {action.completed && action.completed_at && (
             <span className="action-completed-label">
               Completed {new Date(action.completed_at).toLocaleDateString()}
@@ -137,95 +130,88 @@ function ActionRow({ action, farmId, onComplete }: ActionRowProps) {
           )}
         </div>
         <p className="action-text">{action.text}</p>
-        <small className="action-source">
-          Source: {action.source} · Reviewed {action.review_date}
-        </small>
+        <small className="action-source">Source: {action.source} · Reviewed {action.review_date}</small>
       </div>
     </li>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Hazard detail panel
-// ---------------------------------------------------------------------------
-
-interface DetailPanelProps {
-  assessment: HazardAssessment;
-  onClose: () => void;
-}
-
-function HazardDetailPanel({ assessment, onClose }: DetailPanelProps) {
+function HazardDetailPanel({ assessment }: { assessment: HazardAssessment }) {
   const evidenceEntries = Object.entries(assessment.evidence_used);
+  const hasEvidence = assessment.level !== 'Unknown';
 
   return (
-    <aside className="risk-detail-panel workspace-card" aria-label={`${hazardLabel(assessment.hazard)} detail`}>
+    <section className="risk-detail-panel workspace-card" aria-label={`${hazardLabel(assessment.hazard)} detail`}>
       <div className="risk-detail-header">
-        <div>
-          <p className="section-kicker">{horizonLabel(assessment.horizon)}</p>
-          <h2>{hazardLabel(assessment.hazard)}</h2>
+        <div className="risk-detail-title">
+          <span className="risk-detail-hazard-icon" data-hazard={assessment.hazard}>
+            <HazardIcon hazard={assessment.hazard} />
+          </span>
+          <div>
+            <p className="section-kicker">Selected hazard</p>
+            <h2>{hazardLabel(assessment.hazard)}</h2>
+          </div>
         </div>
-        <div className="risk-detail-top-right">
-          <LevelBadge level={assessment.level} />
-          <button
-            type="button"
-            className="risk-detail-close"
-            onClick={onClose}
-            aria-label="Close detail panel"
-          >
-            ×
-          </button>
-        </div>
+        <LevelBadge level={assessment.level} />
       </div>
 
-      <p className="risk-detail-explanation">{assessment.explanation}</p>
+      {hasEvidence ? (
+        <div className="risk-detail-severity">
+          <div className="risk-detail-index">
+            <span className="risk-index-value" aria-label={`Risk severity index ${assessment.index}`}>
+              {assessment.index}
+            </span>
+            <span className="risk-index-label">/ 100 severity index</span>
+          </div>
+          <div className="risk-severity-scale" aria-label={`Risk severity index ${assessment.index} out of 100`}>
+            <i data-level={assessment.level.toLowerCase()} style={{ width: `${assessment.index}%` }} />
+          </div>
+        </div>
+      ) : (
+        <div className="risk-insufficient-evidence">
+          <Database aria-hidden="true" />
+          <span><strong>Insufficient evidence</strong>The unavailable status does not mean this hazard is safe.</span>
+        </div>
+      )}
 
-      <div className="risk-detail-index">
-        <span className="risk-index-value" aria-label={`Hazard index ${assessment.index}`}>
-          {assessment.index}
-        </span>
-        <span className="risk-index-label">/ 100 intensity index</span>
+      <dl className="risk-detail-facts">
+        <div><dt>Assessment horizon</dt><dd>{horizonLabel(assessment.horizon)}</dd></div>
+        <div><dt>Driver</dt><dd>{assessment.driver.replace(/_/g, ' ')}</dd></div>
+        <div><dt>Data status</dt><dd>{assessment.data_mode.replace(/_/g, ' ')}</dd></div>
+      </dl>
+
+      <div className="risk-why-section">
+        <h3>Why?</h3>
+        {evidenceEntries.length > 0 ? (
+          <dl className="risk-evidence-list">
+            {evidenceEntries.map(([field, status]) => (
+              <div key={field} className="risk-evidence-item" data-status={status}>
+                <dt>{field.replace(/_/g, ' ')}</dt><dd>{status}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="risk-crops-empty">No supporting evidence was returned for this assessment.</p>
+        )}
       </div>
 
       {assessment.at_risk_crops.length > 0 && (
         <div className="risk-detail-section">
           <strong>At-risk crops</strong>
           <ul className="risk-crops-list">
-            {assessment.at_risk_crops.map((crop) => (
-              <li key={crop}>{crop}</li>
-            ))}
+            {assessment.at_risk_crops.map((crop) => <li key={crop}>{crop}</li>)}
           </ul>
-        </div>
-      )}
-
-      {evidenceEntries.length > 0 && (
-        <div className="risk-detail-section">
-          <strong>Evidence inputs</strong>
-          <dl className="risk-evidence-list">
-            {evidenceEntries.map(([field, status]) => (
-              <div key={field} className="risk-evidence-item" data-status={status}>
-                <dt>{field.replace(/_/g, ' ')}</dt>
-                <dd>{status}</dd>
-              </div>
-            ))}
-          </dl>
         </div>
       )}
 
       <details className="risk-threshold-note">
         <summary>How was this calculated?</summary>
-        <span>
-          Driver: <strong>{assessment.driver.replace(/_/g, ' ')}</strong>. Thresholds are
-          based on climatological bands. Results labelled <em>Unknown</em> indicate
-          missing evidence, not low risk. Engine {assessment.engine_version}.
-        </span>
+        <p>{assessment.explanation}</p>
+        <span>This is a severity index based on available evidence and physical thresholds. It is not a probability.</span>
       </details>
-    </aside>
+    </section>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Hazard card
-// ---------------------------------------------------------------------------
 
 interface HazardCardProps {
   assessment: HazardAssessment;
@@ -234,59 +220,49 @@ interface HazardCardProps {
 }
 
 function HazardCard({ assessment, selected, onClick }: HazardCardProps) {
-  const completedCount = assessment.actions.filter((a) => a.completed).length;
-  const totalActions = assessment.actions.length;
+  const hasEvidence = assessment.level !== 'Unknown';
 
   return (
     <button
       type="button"
       className="workspace-card risk-card risk-center-card"
+      data-hazard={assessment.hazard}
       data-level={assessment.level.toLowerCase()}
       data-selected={selected || undefined}
       aria-pressed={selected}
       aria-label={`${hazardLabel(assessment.hazard)}: ${assessment.level} level. Click for details.`}
       onClick={onClick}
     >
-      <div className="risk-card-top">
-        <span aria-hidden="true">
-          <HazardIcon hazard={assessment.hazard} />
-        </span>
-        <LevelBadge level={assessment.level} />
+      <div className="risk-card-heading">
+        <span className="risk-card-icon"><HazardIcon hazard={assessment.hazard} /></span>
+        <h2>{hazardLabel(assessment.hazard)}</h2>
       </div>
       <div className="risk-card-score-row">
-        <h2>{hazardLabel(assessment.hazard)}</h2>
-        <strong>{assessment.index}</strong>
+        <strong>{hasEvidence ? assessment.index : '—'}</strong>
+        {hasEvidence && <small>/ 100</small>}
+        <LevelBadge level={assessment.level} />
       </div>
-      <span className="risk-progress" aria-hidden="true">
-        <i style={{ width: `${assessment.index}%` }} />
-      </span>
-      {assessment.level !== 'Unknown' && (
-        <p className="risk-card-driver">
-          Driver: <strong>{assessment.driver.replace(/_/g, ' ')}</strong>
-        </p>
+      {hasEvidence ? (
+        <span className="risk-progress" aria-label={`Risk severity index ${assessment.index} out of 100`}>
+          <i style={{ width: `${assessment.index}%` }} />
+        </span>
+      ) : (
+        <span className="risk-card-unknown">Insufficient evidence</span>
       )}
-      {totalActions > 0 && (
-        <p className="risk-card-actions-summary">
-          {completedCount}/{totalActions} action{totalActions !== 1 ? 's' : ''} done
-        </p>
-      )}
+      <p className="risk-card-driver">
+        {hasEvidence ? `Driver: ${assessment.driver.replace(/_/g, ' ')}` : 'More environmental evidence is required.'}
+      </p>
     </button>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main page
-// ---------------------------------------------------------------------------
-
 export default function RiskCenterPage() {
   const { farmId } = useParams<{ farmId: string }>();
   const router = useRouter();
-
   const [risks, setRisks] = useState<RiskResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [selectedHazard, setSelectedHazard] = useState<string | null>(null);
-
   const abortRef = useRef<AbortController | null>(null);
 
   const loadRisks = useCallback(async (signal: AbortSignal) => {
@@ -295,7 +271,12 @@ export default function RiskCenterPage() {
     try {
       const data = await getFarmRisks(farmId, signal);
       setRisks(data);
-      setSelectedHazard((current) => current ?? data.assessments[0]?.hazard ?? null);
+      const firstAssessment = orderedAssessments(data.assessments)[0];
+      setSelectedHazard((current) =>
+        current && data.assessments.some((assessment) => assessment.hazard === current)
+          ? current
+          : firstAssessment?.hazard ?? null,
+      );
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       if (err instanceof RiskApiError && err.status === 404) {
@@ -316,60 +297,46 @@ export default function RiskCenterPage() {
     return () => controller.abort();
   }, [loadRisks]);
 
-  // Optimistically update action completion in local state
-  const handleActionComplete = useCallback(
-    (hazard: string, actionId: string, completedAt: string) => {
-      setRisks((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          assessments: prev.assessments.map((a) => {
-            if (a.hazard !== hazard) return a;
-            return {
-              ...a,
-              actions: a.actions.map((act) =>
-                act.id === actionId
-                  ? { ...act, completed: true, completed_at: completedAt }
-                  : act,
-              ),
-            };
-          }),
-        };
-      });
-    },
-    [],
-  );
+  const handleActionComplete = useCallback((hazard: string, actionId: string, completedAt: string) => {
+    setRisks((previous) => {
+      if (!previous) return previous;
+      return {
+        ...previous,
+        assessments: previous.assessments.map((assessment) =>
+          assessment.hazard === hazard
+            ? {
+                ...assessment,
+                actions: assessment.actions.map((action) =>
+                  action.id === actionId ? { ...action, completed: true, completed_at: completedAt } : action,
+                ),
+              }
+            : assessment,
+        ),
+      };
+    });
+  }, []);
 
-  const selectedAssessment =
-    risks?.assessments.find((a) => a.hazard === selectedHazard) ?? null;
+  const assessments = risks ? orderedAssessments(risks.assessments) : [];
+  const selectedAssessment = assessments.find((assessment) => assessment.hazard === selectedHazard) ?? null;
 
   return (
-    <div className="decision-page content-stack">
+    <div className="decision-page content-stack risk-center-page">
       <header className="page-heading decision-heading risk-page-heading">
         <div>
-          <p className="section-kicker">Climate risk and action</p>
           <h1>Farm Risk Center</h1>
           <p>Understand climate threats before they damage your farm.</p>
         </div>
-        {risks && (
-          <span
-            className="mode-pill"
-            data-mode={risks.data_mode}
-            aria-label={`Data mode: ${dateModeLabel(risks.data_mode, risks.snapshot_id)}`}
-          >
-            {dateModeLabel(risks.data_mode, risks.snapshot_id)}
-          </span>
+        {selectedAssessment && (
+          <span className="risk-period-control"><CalendarDays aria-hidden="true" />{horizonLabel(selectedAssessment.horizon)}</span>
         )}
       </header>
 
       {loading && (
         <div className="decision-loading">
-          <Skeleton className="h-8 w-64 rounded-xl" />
-          <div className="risk-grid">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-52 w-full rounded-2xl" />
-            ))}
+          <div className="risk-center-grid">
+            {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-36 w-full rounded-xl" />)}
           </div>
+          <Skeleton className="h-96 w-full rounded-xl" />
         </div>
       )}
 
@@ -387,65 +354,65 @@ export default function RiskCenterPage() {
 
       {!loading && risks && (
         <>
-          <div className="evidence-banner">
-            <Info aria-hidden="true" />
-            <span>
-              <strong>No probability claims.</strong> Hazard levels are
-              index-based assessments. Unknown badges indicate missing evidence,
-              not low risk.
-            </span>
-          </div>
-
-          <section className="risk-grid risk-center-grid" aria-label="Hazard assessments">
-              {risks.assessments.map((assessment) => (
-                <HazardCard
-                  key={assessment.hazard}
-                  assessment={assessment}
-                  selected={selectedHazard === assessment.hazard}
-                  onClick={() =>
-                    setSelectedHazard((prev) =>
-                      prev === assessment.hazard ? null : assessment.hazard,
-                    )
-                  }
-                />
-              ))}
+          <section className="risk-center-grid" aria-label="Hazard assessments">
+            {assessments.map((assessment) => (
+              <HazardCard
+                key={assessment.hazard}
+                assessment={assessment}
+                selected={selectedHazard === assessment.hazard}
+                onClick={() => setSelectedHazard(assessment.hazard)}
+              />
+            ))}
           </section>
 
-          <div className="risk-center-main">
-            <section className="risk-comparison-card workspace-card" aria-labelledby="risk-comparison-title">
-              <div className="risk-visual-heading">
-                <div>
-                  <p className="section-kicker">Farm evidence overview</p>
-                  <h2 id="risk-comparison-title">Hazard comparison</h2>
+          {selectedAssessment && (
+            <div className="risk-map-detail-grid">
+              <section className="risk-map-card workspace-card" aria-labelledby="risk-map-title">
+                <div className="risk-map-heading">
+                  <div><h2 id="risk-map-title">Risk Map</h2><p>See risk areas across your farm.</p></div>
+                  <label className="risk-map-selector">
+                    <span className="sr-only">Select hazard</span>
+                    <select value={selectedHazard ?? ''} onChange={(event) => setSelectedHazard(event.target.value)}>
+                      {assessments.map((assessment) => (
+                        <option key={assessment.hazard} value={assessment.hazard}>{selectorLabel(assessment.hazard)}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-                <span>Index / 100</span>
-              </div>
-              <div className="risk-spatial-unavailable">
-                <ShieldAlert aria-hidden="true" />
-                <span><strong>Spatial risk layer unavailable</strong>Assessment currently uses weather, terrain and farm evidence.</span>
-              </div>
-              <div className="risk-comparison-bars">
-                {risks.assessments.map((assessment) => (
-                  <button key={assessment.hazard} type="button" onClick={() => setSelectedHazard(assessment.hazard)}>
-                    <span>{hazardLabel(assessment.hazard)}</span>
+                <div className="risk-map-placeholder">
+                  <span className="risk-map-placeholder-icon"><MapPinned aria-hidden="true" /></span>
+                  <strong>Spatial risk layer unavailable</strong>
+                  <p>Spatially resolved hazard evidence is required to show within-farm risk variation.</p>
+                </div>
+              </section>
+              <HazardDetailPanel assessment={selectedAssessment} />
+            </div>
+          )}
+
+          <section className="risk-comparison-card workspace-card" aria-labelledby="risk-comparison-title">
+            <div className="risk-visual-heading">
+              <div><h2 id="risk-comparison-title">Hazard Comparison</h2><p>Comparison of climate risks for your farm.</p></div>
+              <span>Severity index / 100</span>
+            </div>
+            <div className="risk-comparison-bars">
+              {assessments.map((assessment) => (
+                <button key={assessment.hazard} type="button" onClick={() => setSelectedHazard(assessment.hazard)}>
+                  <span>{hazardLabel(assessment.hazard)}</span>
+                  {assessment.level === 'Unknown' ? (
+                    <i className="risk-comparison-unknown">Insufficient evidence</i>
+                  ) : (
                     <i><b data-level={assessment.level.toLowerCase()} style={{ width: `${assessment.index}%` }} /></i>
-                    <strong>{assessment.index}</strong>
-                  </button>
-                ))}
-              </div>
-            </section>
-            {selectedAssessment && (
-              <HazardDetailPanel
-                assessment={selectedAssessment}
-                onClose={() => setSelectedHazard(null)}
-              />
-            )}
-          </div>
+                  )}
+                  <strong>{assessment.level === 'Unknown' ? '—' : assessment.index}</strong>
+                </button>
+              ))}
+            </div>
+          </section>
 
           <section className="risk-recommended-actions workspace-card" aria-labelledby="risk-actions-title">
             <div className="risk-actions-heading">
-              <div><p className="section-kicker">Recommended actions</p><h2 id="risk-actions-title">Protect your farm</h2></div>
-              {selectedAssessment && <span>{hazardLabel(selectedAssessment.hazard)}</span>}
+              <div><h2 id="risk-actions-title">Recommended Actions</h2><p>Take action early to reduce risks and protect your farm.</p></div>
+              {selectedAssessment && <LevelBadge level={selectedAssessment.level} />}
             </div>
             {selectedAssessment && selectedAssessment.actions.length > 0 ? (
               <ul className="risk-actions-board">
@@ -454,12 +421,14 @@ export default function RiskCenterPage() {
                     key={action.id}
                     action={action}
                     farmId={farmId}
-                    onComplete={(actionId, completedAt) => handleActionComplete(selectedAssessment.hazard, actionId, completedAt)}
+                    onComplete={(actionId, completedAt) =>
+                      handleActionComplete(selectedAssessment.hazard, actionId, completedAt)
+                    }
                   />
                 ))}
               </ul>
             ) : (
-              <p className="risk-no-actions">No specific actions recommended at this level.</p>
+              <p className="risk-no-actions">No urgent actions are recommended for the current assessment.</p>
             )}
           </section>
         </>

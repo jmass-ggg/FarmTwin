@@ -227,6 +227,8 @@ def context_for_risks(snapshot: "AnalysisSnapshot") -> SnapshotContext:
         if value is None or (snapshot.climate_baseline or {}).get("aggregation_version") != "monthly-totals-v2":
             baseline = None
             break
+        # precipitation_sum is a climatological monthly total in millimetres.
+        # Convert each covered month to a daily normal, then sum the matched 7 days.
         baseline += value / calendar.monthrange(day.year, day.month)[1]
     return replace(context, temperature_mean_c=temperature, rainfall_total_mm=context.rain_7d_mm,
                    climate_baseline_rainfall_mm=baseline)

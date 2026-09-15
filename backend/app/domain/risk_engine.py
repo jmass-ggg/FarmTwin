@@ -41,6 +41,10 @@ HEAT_MEDIUM_TEMP = 30.0
 HEAT_AT_RISK_WINDOW_C = 3.0
 HEAT_MAX_AT_RISK_CROPS = 3
 
+# A current NDVI below this value indicates sparse vegetation. It is not a
+# historical trend and must never be described as an NDVI decline.
+LOW_NDVI_THRESHOLD = 0.3
+
 # Heavy rainfall thresholds (mm over 7 days)
 HEAVY_RAIN_HIGH_MM = 120.0
 HEAVY_RAIN_MEDIUM_MM = 60.0
@@ -188,7 +192,7 @@ def _assess_drought(context: SnapshotContext) -> HazardAssessment:
             level=LEVEL_UNKNOWN,
             driver="rainfall_deficit",
             explanation="Matched rainfall and baseline data are required; drought assessment cannot be completed.",
-            horizon="seasonal",
+            horizon="short_term",
             at_risk_crops=(),
             actions=(),
             evidence_used=evidence_used,
@@ -212,20 +216,33 @@ def _assess_drought(context: SnapshotContext) -> HazardAssessment:
     vpd = context.vpd_kpa
     ndvi = context.ndvi_mean
 
-    if vpd is not None and vpd > 2.5 and ndvi is not None and ndvi < 0.3:
+    if vpd is not None and vpd > 2.5 and ndvi is not None and ndvi < LOW_NDVI_THRESHOLD:
         driver = "combined"
     elif vpd is not None and vpd > 2.5:
         driver = "vpd_stress"
-    elif ndvi is not None and ndvi < 0.3:
-        driver = "ndvi_decline"
+    elif ndvi is not None and ndvi < LOW_NDVI_THRESHOLD:
+        driver = "low_ndvi"
     else:
         driver = "rainfall_deficit"
 
-    explanation = (
-        f"Rainfall is {rainfall:.0f} mm against an baseline for the same assessment period "
-        f"(ratio {ratio:.2f}). "
-        f"Primary driver: {driver.replace('_', ' ')}."
-    )
+    if ratio >= 1.0:
+        surplus_pct = (ratio - 1.0) * 100.0
+        explanation = (
+            f"Rainfall over the assessment period was {rainfall:.1f} mm compared with "
+            f"a {baseline:.1f} mm climatological baseline. Rainfall was "
+            f"{surplus_pct:.0f}% above baseline, so there is no rainfall-deficit "
+            "drought signal."
+        )
+    else:
+        deficit_pct = (1.0 - ratio) * 100.0
+        explanation = (
+            f"Rainfall over the assessment period was {rainfall:.1f} mm compared with "
+            f"a {baseline:.1f} mm climatological baseline, representing a "
+            f"{deficit_pct:.0f}% rainfall deficit. The resulting drought level is {level.lower()}."
+        )
+
+    if driver != "rainfall_deficit":
+        explanation += f" Additional stress evidence: {driver.replace('_', ' ')}."
 
     return HazardAssessment(
         hazard="drought",
@@ -233,7 +250,7 @@ def _assess_drought(context: SnapshotContext) -> HazardAssessment:
         level=level,
         driver=driver,
         explanation=explanation,
-        horizon="seasonal",
+        horizon="short_term",
         at_risk_crops=(),
         actions=(),
         evidence_used=evidence_used,
