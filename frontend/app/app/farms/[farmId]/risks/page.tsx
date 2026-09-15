@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -9,9 +10,15 @@ import {
   Search,
   ShieldCheck,
 } from 'lucide-react';
-import Image from 'next/image';
+import Image, { type StaticImageData } from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import droughtImage from '../../../../../photos/drought.png';
+import floodImage from '../../../../../photos/flood.png';
+import heatImage from '../../../../../photos/Heat.png';
+import rainfallImage from '../../../../../photos/rainfall.png';
+import windImage from '../../../../../photos/wind.png';
 
 import { ApiErrorState } from '@/components/api-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,12 +32,12 @@ import {
 } from '@/lib/api/risks';
 
 const HAZARD_ORDER = ['flood_exposure', 'drought', 'heat', 'heavy_rainfall', 'wind'];
-const HAZARD_IMAGES: Record<string, string> = {
-  flood_exposure: '/photos/flood.png',
-  drought: '/photos/drought.png',
-  heat: '/photos/Heat.png',
-  heavy_rainfall: '/photos/rainfall.png',
-  wind: '/photos/wind.png',
+const HAZARD_IMAGES: Record<string, StaticImageData> = {
+  flood_exposure: floodImage,
+  drought: droughtImage,
+  heat: heatImage,
+  heavy_rainfall: rainfallImage,
+  wind: windImage,
 };
 
 function hazardLabel(hazard: string): string {
@@ -163,32 +170,34 @@ function HazardDetailPanel({ assessment }: { assessment: HazardAssessment }) {
         <LevelBadge level={assessment.level} />
       </div>
 
-      <p className="risk-detail-context">Current assessment from the available environmental evidence for this farm.</p>
+      <p className="risk-detail-context">Current assessment · {assessment.data_mode.replace(/_/g, ' ')}</p>
 
-      {hasEvidence ? (
-        <div className="risk-detail-severity">
-          <div className="risk-detail-index">
-            <span className="risk-index-value" aria-label={`Risk severity index ${assessment.index}`}>
-              {assessment.index}
-            </span>
-            <span className="risk-index-label">/ 100 severity index</span>
+      <div className="risk-detail-metrics">
+        {hasEvidence ? (
+          <div className="risk-detail-severity">
+            <span className="risk-metric-label">Risk severity</span>
+            <div className="risk-detail-index">
+              <span className="risk-index-value" aria-label={`Risk severity index ${assessment.index}`}>
+                {assessment.index}
+              </span>
+              <span className="risk-index-label">/ 100</span>
+            </div>
+            <div className="risk-severity-scale" aria-label={`Risk severity index ${assessment.index} out of 100`}>
+              <i data-level={assessment.level.toLowerCase()} style={{ width: `${assessment.index}%` }} />
+            </div>
           </div>
-          <div className="risk-severity-scale" aria-label={`Risk severity index ${assessment.index} out of 100`}>
-            <i data-level={assessment.level.toLowerCase()} style={{ width: `${assessment.index}%` }} />
+        ) : (
+          <div className="risk-insufficient-evidence">
+            <Database aria-hidden="true" />
+            <span><strong>Insufficient evidence</strong>This does not mean the hazard is safe.</span>
           </div>
-        </div>
-      ) : (
-        <div className="risk-insufficient-evidence">
-          <Database aria-hidden="true" />
-          <span><strong>Insufficient evidence</strong>The unavailable status does not mean this hazard is safe.</span>
-        </div>
-      )}
+        )}
 
-      <dl className="risk-detail-facts">
-        <div><dt>Assessment horizon</dt><dd>{horizonLabel(assessment.horizon)}</dd></div>
-        <div><dt>Driver</dt><dd>{assessment.driver.replace(/_/g, ' ')}</dd></div>
-        <div><dt>Data status</dt><dd>{assessment.data_mode.replace(/_/g, ' ')}</dd></div>
-      </dl>
+        <dl className="risk-detail-facts">
+          <div><dt>Assessment horizon</dt><dd>{horizonLabel(assessment.horizon)}</dd></div>
+          <div><dt>Main driver</dt><dd>{assessment.driver.replace(/_/g, ' ')}</dd></div>
+        </dl>
+      </div>
 
       <div className="risk-why-section">
         <h3>Why?</h3>
@@ -213,6 +222,11 @@ function HazardDetailPanel({ assessment }: { assessment: HazardAssessment }) {
           </ul>
         </div>
       )}
+
+      <div className="risk-observations">
+        <h3>Environmental observations</h3>
+        <p>{assessment.explanation}</p>
+      </div>
 
       <details className="risk-threshold-note">
         <summary>How was this calculated?</summary>
@@ -417,22 +431,15 @@ export default function RiskCenterPage() {
 
           <section className="risk-comparison-card risk-timeline-card workspace-card" aria-labelledby="risk-comparison-title">
             <div className="risk-visual-heading">
-              <div><h2 id="risk-comparison-title">Current Hazard Comparison</h2><p>Current severity across supported hazards.</p></div>
-              <span>Severity index / 100</span>
+              <div><h2 id="risk-comparison-title">Risk Timeline (Next 7 Days)</h2><p>Forecast of climate risks for your farm.</p></div>
             </div>
-            <div className="risk-comparison-bars">
-              {assessments.map((assessment) => (
-                <button key={assessment.hazard} type="button" onClick={() => setSelectedHazard(assessment.hazard)}>
-                  <span className="risk-comparison-name"><HazardImage hazard={assessment.hazard} size={17} />{comparisonLabel(assessment.hazard)}</span>
-                  {assessment.level === 'Unknown' ? (
-                    <i className="risk-comparison-unknown">Insufficient evidence</i>
-                  ) : (
-                    <i><b data-level={assessment.level.toLowerCase()} style={{ width: `${assessment.index}%` }} /></i>
-                  )}
-                  <strong>{assessment.level === 'Unknown' ? '—' : assessment.index}</strong>
-                </button>
-              ))}
-            </div>
+            <output className="risk-timeline-unavailable">
+              <CalendarClock aria-hidden="true" />
+              <div>
+                <strong>7-day risk timeline unavailable</strong>
+                <p>Day-level risk scores are not available from the current risk API. Daily weather evidence cannot be converted into hazard severity lines without approved risk-engine calculations.</p>
+              </div>
+            </output>
           </section>
 
           <section className="risk-recommended-actions workspace-card" aria-labelledby="risk-actions-title">
