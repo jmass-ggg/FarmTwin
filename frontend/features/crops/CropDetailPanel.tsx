@@ -1,11 +1,22 @@
-import { AlertTriangle, Droplets, Thermometer, ThumbsDown } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarPlus,
+  Droplets,
+  Leaf,
+  Thermometer,
+  ThumbsDown,
+} from 'lucide-react';
+import Link from 'next/link';
 
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { CropEntry, SimulationResult } from '@/lib/api/crops';
+import { CropVisual } from './CropCard';
 
 interface CropDetailPanelProps {
   result: SimulationResult;
   cropEntry: CropEntry | null;
+  planHref: string;
 }
 
 const COMPONENT_LABELS: Record<string, string> = {
@@ -22,47 +33,27 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
   return (
     <div className="component-bar" data-score={colour}>
       <span className="component-bar-label">{label}</span>
-      <div className="component-bar-track" role="progressbar" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100}>
-        <div className="component-bar-fill" style={{ width: `${score}%` }} />
-      </div>
+      <meter className="component-bar-track" value={score} min={0} max={100}>{score}/100</meter>
       <span className="component-bar-value">{score}</span>
     </div>
   );
 }
 
-function ScoreDial({ score, hardExclusion }: { score: number; hardExclusion: boolean }) {
-  const colour = hardExclusion ? 'red' : score >= 82 ? 'green' : score >= 68 ? 'amber' : 'red';
-  return (
-    <div className="score-dial" data-score={colour} aria-label={`Overall suitability score: ${score} out of 100`}>
-      <span className="score-dial-value">{hardExclusion ? 0 : score}</span>
-      <small>/100</small>
-    </div>
-  );
-}
-
-export function CropDetailPanel({ result, cropEntry }: CropDetailPanelProps) {
+export function CropDetailPanel({ result, cropEntry, planHref }: CropDetailPanelProps) {
   const components = result.components;
 
   return (
     <div className="crop-detail-panel workspace-card">
-      <div className="crop-detail-header">
-        <div>
+      <div className="crop-detail-hero">
+        <CropVisual cropName={result.crop_name} />
+        <div className="crop-detail-title">
+          <span>Selected crop</span>
           <h2>{result.crop_name}</h2>
           {cropEntry && <p className="crop-meta">{cropEntry.category}</p>}
         </div>
-        <div className="crop-detail-badges">
-          <span
-            className="mode-pill"
-            data-mode={result.data_mode}
-            aria-label={`Data mode: ${result.data_mode}`}
-          >
-            {result.data_mode === 'demonstration'
-              ? 'Demonstration index'
-              : `Snapshot-backed${result.snapshot_id ? '' : ''}`}
-          </span>
-          {result.snapshot_id && (
-            <span className="snapshot-badge">Snapshot: {result.snapshot_id.slice(0, 8)}…</span>
-          )}
+        <div className="crop-detail-score">
+          <strong>{result.hard_exclusion ? 0 : result.suitability_index}%</strong>
+          <span>{result.hard_exclusion ? 'Not suitable' : result.label}</span>
         </div>
       </div>
 
@@ -76,7 +67,6 @@ export function CropDetailPanel({ result, cropEntry }: CropDetailPanelProps) {
         <TabsContent value="overview">
           <div className="tab-content-overview">
             <div className="overview-top">
-              <ScoreDial score={result.suitability_index} hardExclusion={result.hard_exclusion} />
               <div className="overview-summary">
                 <p className="overview-reason">{result.reason}</p>
                 <p className="overview-limiting">
@@ -85,13 +75,14 @@ export function CropDetailPanel({ result, cropEntry }: CropDetailPanelProps) {
                 </p>
               </div>
             </div>
-            <div className="component-bars">
+            <div className="crop-overview-rows">
+              <div><Thermometer /><span>Temperature suitability</span><strong>{components.temperature}/100</strong></div>
+              <div><Droplets /><span>Water condition</span><strong>{components.water}/100</strong></div>
+              <div><Leaf /><span>Soil compatibility</span><strong>{components.soil}/100</strong></div>
+            </div>
+            <div className="component-bars" aria-label="Detailed suitability components">
               {Object.entries(components).map(([key, score]) => (
-                <ScoreBar
-                  key={key}
-                  label={COMPONENT_LABELS[key] ?? key}
-                  score={score as number}
-                />
+                <ScoreBar key={key} label={COMPONENT_LABELS[key] ?? key} score={score as number} />
               ))}
             </div>
           </div>
@@ -127,6 +118,8 @@ export function CropDetailPanel({ result, cropEntry }: CropDetailPanelProps) {
             </table>
             <p className="engine-version">
               Engine: <code>{result.engine_version}</code>
+              {result.snapshot_id ? ` · Snapshot ${result.snapshot_id.slice(0, 8)}…` : ''}
+              {` · ${result.data_mode.replace(/_/g, ' ')}`}
             </p>
           </div>
         </TabsContent>
@@ -185,6 +178,9 @@ export function CropDetailPanel({ result, cropEntry }: CropDetailPanelProps) {
           </div>
         </TabsContent>
       </Tabs>
+      <Button className="crop-plan-action" render={<Link href={planHref} />}>
+        <CalendarPlus /> Add to Crop Plan
+      </Button>
     </div>
   );
 }

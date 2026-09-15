@@ -1,9 +1,39 @@
+import { Check, Sprout } from 'lucide-react';
+
 import type { SimulationResult } from '@/lib/api/crops';
 
 interface CropCardProps {
   result: SimulationResult;
+  category?: string;
   selected: boolean;
   onClick: () => void;
+}
+
+const CROP_GLYPHS: Array<[string, string]> = [
+  ['maize', '🌽'],
+  ['corn', '🌽'],
+  ['bean', '🫘'],
+  ['tomato', '🍅'],
+  ['cabbage', '🥬'],
+  ['kale', '🥬'],
+  ['spinach', '🥬'],
+  ['carrot', '🥕'],
+  ['onion', '🧅'],
+  ['potato', '🥔'],
+  ['rice', '🌾'],
+  ['wheat', '🌾'],
+  ['sorghum', '🌾'],
+  ['soy', '🫘'],
+  ['pea', '🫛'],
+];
+
+export function CropVisual({ cropName }: { cropName: string }) {
+  const glyph = CROP_GLYPHS.find(([name]) => cropName.toLowerCase().includes(name))?.[1];
+  return (
+    <span className="crop-visual" aria-hidden="true">
+      {glyph ?? <Sprout />}
+    </span>
+  );
 }
 
 function scoreBadgeVariant(
@@ -16,45 +46,44 @@ function scoreBadgeVariant(
   return 'red';
 }
 
-export function CropCard({ result, selected, onClick }: CropCardProps) {
+export function CropCard({ result, category, selected, onClick }: CropCardProps) {
   const badgeVariant = scoreBadgeVariant(result.suitability_index, result.hard_exclusion);
+  const score = result.hard_exclusion ? 0 : result.suitability_index;
 
   return (
-    <article
+    <button
+      type="button"
       className="crop-card workspace-card"
       data-selected={selected || undefined}
       data-score={badgeVariant}
-      aria-selected={selected}
-      role="button"
-      tabIndex={0}
+      aria-pressed={selected}
       onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick();
-        }
-      }}
     >
-      <div className="crop-card-header">
-        <div>
-          <p className="crop-category">{result.crop_name}</p>
-          <small className="crop-meta">{result.label}</small>
-        </div>
+      {selected && (
+        <span className="crop-selected-check" aria-label="Selected crop">
+          <Check />
+        </span>
+      )}
+      <div className="crop-card-main">
+        <CropVisual cropName={result.crop_name} />
         <span
           className="crop-score-badge"
           data-variant={badgeVariant}
-          aria-label={`Suitability score: ${result.suitability_index}`}
+          aria-label={`Suitability score: ${score} percent`}
+          style={{
+            background: `conic-gradient(currentColor ${score * 3.6}deg, #e7ede9 0deg)`,
+          }}
         >
-          {result.hard_exclusion ? '0' : result.suitability_index}
+          <span>{score}%</span>
         </span>
       </div>
-      {result.hard_exclusion ? (
-        <p className="crop-exclusion-reason" aria-live="polite">
-          Not suitable — {result.hard_exclusion_reason ?? 'conditions exceed tolerance'}
-        </p>
-      ) : (
-        <p className="crop-reason">{result.reason}</p>
-      )}
-    </article>
+      <div className="crop-card-copy">
+        <p className="crop-category">{result.crop_name}</p>
+        {category && <small className="crop-meta">{category}</small>}
+      </div>
+      <span className="crop-status-pill" data-variant={badgeVariant}>
+        {result.hard_exclusion ? 'Not suitable' : result.label}
+      </span>
+    </button>
   );
 }

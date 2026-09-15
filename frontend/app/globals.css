@@ -705,6 +705,505 @@
   .risk-columns { grid-template-columns: 1fr; }
 }
 
+/* ============================================================
+   FarmTwin crop simulator and annual planner workspace refresh
+   ============================================================ */
+
+.crops-page,
+.decision-page {
+  width: min(1320px, 100%);
+  gap: 18px;
+}
+
+.crops-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #6a7784;
+  font-size: .78rem;
+  font-weight: 650;
+}
+
+.crops-breadcrumb a:hover { color: #07883d; }
+.crops-breadcrumb svg { width: 14px; }
+.crops-breadcrumb span { color: #243447; }
+
+.crops-heading,
+.decision-heading { align-items: flex-start; }
+
+.crops-heading h1,
+.decision-heading h1 {
+  color: #17263a;
+  font-size: clamp(2rem, 3vw, 2.65rem);
+}
+
+.crops-heading > div > p:last-child,
+.decision-heading > div > p:last-child {
+  margin-top: 8px;
+  color: #66758a;
+  font-size: .92rem;
+}
+
+.environment-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.environment-card {
+  min-height: 88px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border-radius: 13px;
+  padding: 15px;
+}
+
+.environment-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: #eaf8ef;
+  color: #08a84e;
+}
+
+.environment-icon svg { width: 19px; }
+.environment-card small,
+.environment-card strong,
+.environment-card em { display: block; }
+.environment-card small { color: #748092; font-size: .69rem; font-weight: 680; }
+.environment-card strong { margin-top: 2px; color: #18283b; font-size: 1rem; }
+.environment-card em {
+  margin-top: 3px;
+  overflow: hidden;
+  color: #8b96a4;
+  font-size: .62rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crops-controls {
+  align-items: center;
+  gap: 12px 18px;
+  border-radius: 13px;
+  padding: 13px 16px;
+}
+
+.crops-controls .control-group { flex-direction: row; align-items: center; gap: 8px; }
+.crops-controls .control-label { color: #647184; font-size: .72rem; }
+.crops-controls .control-input { height: 36px; min-width: 140px; font-size: .78rem; }
+.crops-controls .cultivation-toggle button { min-height: 34px; padding-inline: 12px; font-size: .75rem; }
+.simulation-date-note { margin-left: auto; color: #8993a0; font-size: .7rem; }
+
+.crops-workspace {
+  overflow: hidden;
+  border-radius: 15px;
+  padding: 0;
+}
+
+.crops-layout {
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 0;
+}
+
+.crops-grid-section { min-width: 0; padding: 18px; }
+
+.crops-filter-row {
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) auto auto;
+  gap: 9px;
+  margin-bottom: 16px;
+}
+
+.crop-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.crop-search-wrap > svg {
+  position: absolute;
+  left: 12px;
+  width: 16px;
+  color: #718091;
+  pointer-events: none;
+}
+
+.crop-search-input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding-left: 37px;
+  font-size: .74rem;
+}
+
+.category-chips { flex-wrap: nowrap; }
+.category-chip { min-height: 38px; padding-inline: 11px; font-size: .7rem; }
+
+.crop-sort {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid #cddbd1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0 9px;
+  color: #748092;
+  font-size: .66rem;
+}
+
+.crop-sort select {
+  border: 0;
+  background: transparent;
+  color: #253548;
+  font-size: .71rem;
+  font-weight: 650;
+  outline: none;
+}
+
+.crops-grid,
+.crops-skeleton-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.crop-card {
+  position: relative;
+  min-height: 150px;
+  justify-content: space-between;
+  gap: 7px;
+  border-radius: 11px;
+  padding: 12px;
+}
+
+.crop-card[data-score] { border-left-width: 1px; }
+.crop-card[data-selected] { background: #f0fbf4; }
+
+.crop-card-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.crop-visual {
+  display: grid;
+  place-items: center;
+  min-width: 54px;
+  height: 54px;
+  color: #14984c;
+  font-size: 2.35rem;
+  line-height: 1;
+}
+
+.crop-visual svg { width: 38px; height: 38px; stroke-width: 1.5; }
+
+.crop-score-badge {
+  position: relative;
+  width: 49px;
+  min-width: 49px;
+  height: 49px;
+  border-radius: 50%;
+  padding: 4px;
+  background: none;
+  font-size: .67rem;
+}
+
+.crop-score-badge::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.crop-score-badge > span { position: relative; z-index: 1; color: #243447; font-weight: 800; }
+.crop-card-copy { min-width: 0; }
+.crop-category { color: #18283b; font-size: .8rem; }
+.crop-meta { font-size: .62rem; }
+
+.crop-status-pill {
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: .6rem;
+  font-weight: 760;
+}
+
+.crop-status-pill[data-variant='green'] { background: #dcf8e5; color: #07883d; }
+.crop-status-pill[data-variant='amber'] { background: #fff1d0; color: #9b6209; }
+.crop-status-pill[data-variant='red'] { background: #fee9e9; color: #ae3535; }
+
+.crop-selected-check {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #08a84e;
+  color: #fff;
+}
+
+.crop-selected-check svg { width: 12px; }
+
+.crops-detail-aside {
+  top: 18px;
+  min-height: 590px;
+  max-height: calc(100vh - 36px);
+  border-left: 1px solid #e3e9e5;
+  background: #fbfdfb;
+}
+
+.crop-detail-panel {
+  min-height: 590px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 18px;
+}
+
+.crop-detail-hero {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.crop-detail-title > span { color: #83908a; font-size: .63rem; font-weight: 700; text-transform: uppercase; }
+.crop-detail-title h2 { margin: 2px 0 0; color: #18283b; font-size: 1.25rem; }
+.crop-detail-title p { margin: 2px 0 0; }
+.crop-detail-score { text-align: right; }
+.crop-detail-score strong,
+.crop-detail-score span { display: block; }
+.crop-detail-score strong { color: #07883d; font-size: 1.2rem; }
+.crop-detail-score span { margin-top: 3px; color: #557266; font-size: .62rem; }
+
+.crop-detail-panel [data-slot='tabs-list'] { width: 100%; }
+.crop-detail-panel [data-slot='tabs-trigger'] { flex: 1; font-size: .7rem; }
+.tab-content-overview,
+.tab-content-requirements,
+.tab-content-risks { padding-top: 12px; }
+.overview-top { margin-bottom: 12px; }
+.overview-reason { font-size: .78rem; }
+
+.crop-overview-rows { display: grid; gap: 0; border-top: 1px solid #e8ede9; }
+.crop-overview-rows > div {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 39px;
+  border-bottom: 1px solid #e8ede9;
+  color: #68766f;
+  font-size: .7rem;
+}
+.crop-overview-rows svg { width: 15px; color: #08a84e; }
+.crop-overview-rows strong { color: #243447; }
+.component-bars { margin-top: 10px; }
+.component-bar { grid-template-columns: 112px 1fr 28px; gap: 7px; padding: 4px 0; }
+.component-bar-label,
+.component-bar-value { font-size: .64rem; }
+.component-bar-track { height: 6px; }
+.crop-plan-action { width: 100%; margin-top: 18px; background: #08a84e; }
+
+.crop-detail-empty {
+  display: grid;
+  place-items: center;
+  min-height: 520px;
+  padding: 28px;
+  color: #87938c;
+  text-align: center;
+}
+.crop-detail-empty svg { width: 34px; color: #21a65a; }
+.crop-detail-empty h2 { margin: 10px 0 0; color: #26394a; font-size: 1.1rem; }
+.crop-detail-empty p { margin: 6px 0 0; font-size: .76rem; line-height: 1.5; }
+
+.scenario-disclosure,
+.planner-secondary-tools {
+  border: 1px solid #dfe7e1;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.scenario-disclosure > summary,
+.planner-secondary-tools > summary {
+  padding: 14px 17px;
+  color: #25394a;
+  cursor: pointer;
+  font-size: .8rem;
+  font-weight: 760;
+}
+
+.scenario-disclosure > .workspace-card,
+.planner-secondary-tools > .workspace-card { border: 0; border-top: 1px solid #e5ebe7; border-radius: 0 0 13px 13px; box-shadow: none; }
+
+/* Annual plan */
+.planner-change-banner {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto;
+  justify-content: stretch;
+  border-color: #efcf75;
+  background: #fffaf0;
+  color: #5c4423;
+  padding: 10px 16px;
+  text-align: left;
+}
+.planner-change-banner > svg { color: #e07a11; }
+.planner-change-copy strong,
+.planner-change-copy > span { display: block; }
+.planner-change-copy strong { color: #7b3f0d; font-size: .78rem; }
+.planner-change-copy > span { margin-top: 2px; color: #715f49; font-size: .7rem; }
+.planner-change-link { color: #07883d; font-size: .72rem; font-weight: 750; text-decoration: underline; }
+
+.decision-page .evidence-banner {
+  min-height: 48px;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: .73rem;
+}
+.decision-page .evidence-banner strong { display: inline; }
+
+.annual-plan-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  align-items: start;
+  gap: 16px;
+}
+
+.annual-months .section-heading-row { margin-bottom: 12px; }
+.annual-months .section-heading-row h2 { color: #17263a; font-size: 1.05rem; }
+.annual-months .section-heading-row p { font-size: .7rem; }
+
+.month-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.month-grid button {
+  min-height: 164px;
+  align-items: center;
+  gap: 5px;
+  border-radius: 12px;
+  padding: 12px;
+  text-align: center;
+}
+.month-grid button:hover { transform: translateY(-1px); }
+.month-grid-label-row { width: 100%; color: #243447; }
+.month-grid button > .crop-visual { margin: auto 0 1px; }
+.month-crop-name { justify-content: center !important; color: #17263a; font-size: .8rem !important; }
+.month-status-pill {
+  margin-top: 2px !important;
+  border-radius: 999px;
+  background: #ddf8e5;
+  color: #07883d !important;
+  padding: 4px 9px;
+  font-size: .6rem !important;
+  font-weight: 760;
+}
+.saved-badge { letter-spacing: 0; text-transform: none; }
+
+.month-detail {
+  position: sticky;
+  top: 18px;
+  overflow: hidden;
+  border-radius: 14px;
+  padding: 0;
+}
+
+.month-detail-hero {
+  position: relative;
+  min-height: 190px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  background: linear-gradient(135deg, #173d2a, #0a7e3a);
+  color: #fff;
+  padding: 22px;
+}
+.month-detail-visual { position: absolute; right: 14px; bottom: 18px; opacity: .84; transform: scale(1.8); }
+.month-detail-hero > div:last-child { position: relative; z-index: 1; }
+.month-detail-month { margin: 0 0 6px; font-size: 1.35rem; font-weight: 760; }
+.month-detail-hero span { font-size: .72rem; opacity: .8; }
+.month-detail-hero h2 { margin: 3px 0 8px; color: #fff; font-size: 1.75rem; }
+.month-detail-score { display: inline-flex; border-radius: 999px; background: #dff9e7; color: #08783b; padding: 6px 10px; font-size: .72rem; }
+
+.month-detail .climate-metrics { grid-template-columns: 1fr; gap: 0; margin: 0; padding: 14px 20px 4px; }
+.month-detail .climate-metrics > div {
+  min-height: 44px;
+  grid-template-columns: 22px 1fr;
+  border: 0;
+  border-bottom: 1px solid #e8ede9;
+  border-radius: 0;
+  background: transparent;
+  padding: 7px 0;
+}
+.month-detail .climate-metrics span { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.month-detail .climate-metrics small { font-size: .68rem; }
+.month-detail .climate-metrics strong { margin: 0; font-size: .72rem; text-align: right; }
+
+.month-detail .recommendation-grid { display: block; margin: 0; padding: 12px 20px 20px; }
+.month-detail .recommendation-grid article { border: 0; background: transparent; padding: 0; }
+.month-advisory {
+  display: grid !important;
+  grid-template-columns: 18px 1fr;
+  align-items: start !important;
+  justify-content: start !important;
+  gap: 8px;
+  border-radius: 10px;
+  background: #eef9f2;
+  padding: 11px;
+  color: #53675b;
+  font-size: .67rem;
+  line-height: 1.45;
+}
+.month-advisory svg { width: 16px; color: #08a84e; }
+.month-advisory strong { display: block; margin-bottom: 2px; color: #234331; }
+.month-detail .add-to-plan-btn { width: 100%; margin-top: 11px; border-color: #08a84e; background: #08a84e; color: #fff; }
+
+.schedule-panel { border-radius: 14px; padding: 20px; }
+
+@media (max-width: 1180px) {
+  .crops-filter-row { grid-template-columns: 1fr; }
+  .category-chips { flex-wrap: wrap; }
+  .crop-sort { width: fit-content; }
+  .crops-grid,
+  .crops-skeleton-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .annual-plan-workspace { grid-template-columns: minmax(0, 1fr) 330px; }
+}
+
+@media (max-width: 960px) {
+  .environment-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .crops-layout,
+  .annual-plan-workspace { grid-template-columns: 1fr; }
+  .crops-detail-aside { position: static; min-height: 0; max-height: none; border-top: 1px solid #e3e9e5; border-left: 0; }
+  .crop-detail-panel { min-height: 0; }
+  .month-detail { position: static; }
+  .month-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .environment-summary { grid-template-columns: 1fr; }
+  .crops-controls .control-group { width: 100%; justify-content: space-between; }
+  .simulation-date-note { width: 100%; margin-left: 0; }
+  .crops-grid,
+  .crops-skeleton-grid,
+  .month-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .crop-detail-hero { grid-template-columns: 52px 1fr; }
+  .crop-detail-score { grid-column: 1 / -1; text-align: left; }
+  .planner-change-banner { grid-template-columns: 22px 1fr auto; }
+  .planner-change-link { display: none; }
+}
+
 /* Annual Planner enhancements */
 
 /* Month grid saved badge (Task 5.1) */

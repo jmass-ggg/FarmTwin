@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ApiErrorState } from '@/components/api-state';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ScenarioControls } from '@/features/decision/ScenarioControls';
+import { CropVisual } from '@/features/crops/CropCard';
 import {
   acceptChangeProposal,
   createPlanEntry,
@@ -302,20 +303,28 @@ function ProposalDialog({ farmId, proposals, entries, onAccepted }: ProposalDial
 
   const pendingProposals = proposals.filter((p) => p.status === 'pending');
   if (pendingProposals.length === 0) return null;
+  const featuredProposal = pendingProposals[0];
+  const featuredEntry = entries.find((entry) => entry.id === featuredProposal.entry_id);
+  const featuredDelta = featuredProposal.new_suitability_index - featuredProposal.old_suitability_index;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button variant="outline" className="planner-proposal-trigger" aria-label="Review change proposals" />
+          <Button variant="outline" className="planner-change-banner" aria-label="Review change proposals" />
         }
       >
         <Bell />
-        <span>
-          {pendingProposals.length} proposal
-          {pendingProposals.length !== 1 ? 's' : ''} pending
+        <span className="planner-change-copy">
+          <strong>Farm plan update available</strong>
+          <span>
+            {featuredEntry?.crop_name ?? 'A saved crop'} suitability changed from{' '}
+            {featuredProposal.old_suitability_index} to {featuredProposal.new_suitability_index}
+            {featuredDelta === 0 ? '.' : ` (${featuredDelta > 0 ? '+' : ''}${featuredDelta}).`}
+          </span>
         </span>
-        <span className="proposal-badge" aria-hidden="true">
+        <span className="planner-change-link">View details</span>
+        <span className="proposal-badge" aria-label={`${pendingProposals.length} pending proposals`}>
           {pendingProposals.length}
         </span>
       </DialogTrigger>
@@ -409,6 +418,24 @@ export default function AnnualPlanPage() {
   const [addToPlanOpen, setAddToPlanOpen] = useState(false);
   const [addToPlanCrop, setAddToPlanCrop] = useState<{ name: string; monthNumber: number; monthName: string } | null>(null);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const cropName = params.get('crop')?.trim();
+    const requestedMonth = Number(params.get('month'));
+    if (!cropName) return;
+    const monthNumber = Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12
+      ? requestedMonth
+      : new Date().getMonth() + 1;
+    const monthName = new Intl.DateTimeFormat(undefined, { month: 'long' }).format(
+      new Date(Date.UTC(year, monthNumber - 1, 1)),
+    );
+    queueMicrotask(() => {
+      setMonth(monthNumber);
+      setAddToPlanCrop({ name: cropName, monthNumber, monthName });
+      setAddToPlanOpen(true);
+    });
+  }, [year]);
+
   // Real scenario results (populated when snapshot is available)
   const [scenarioResult, setScenarioResult] = useState<{
     crops: CropScenarioResult[];
@@ -501,6 +528,8 @@ export default function AnnualPlanPage() {
     setAddToPlanOpen(true);
   };
 
+  const selectedRecommendation = plan.data?.selected_month.recommendations[0] ?? null;
+
   return (
     <div className="decision-page content-stack">
       <Link className="back-link" href={`/app/farms/${farmId}/twin`}>
@@ -508,31 +537,27 @@ export default function AnnualPlanPage() {
       </Link>
       <header className="page-heading decision-heading">
         <div>
-          <p className="section-kicker">Seasonal / annual farm planner</p>
-          <h1>{plan.data?.farm_name ?? 'Plan the growing year'}</h1>
-          <p>
-            Compare twelve planting periods, inspect the strongest crop options,
-            and test how a different climate could change the ranking.
-          </p>
+          <p className="section-kicker">{plan.data?.farm_name ?? 'Annual planning'}</p>
+          <h1>Your Annual Farm Plan</h1>
+          <p>See which crops are most suitable for each month based on available farm conditions.</p>
         </div>
-        <div className="planner-header-actions">
-          {plan.data?.data_mode && (
-            <span className="mode-pill">
-              {plan.data.data_mode === 'demonstration'
-                ? 'Demonstration index'
-                : plan.data.data_mode.replace(/_/g, ' ')}
-            </span>
-          )}
-          {cropPlan.data && (
-            <ProposalDialog
-              farmId={farmId}
-              proposals={cropPlan.data.proposals}
-              entries={cropPlan.data.entries}
-              onAccepted={invalidatePlan}
-            />
-          )}
-        </div>
+        {plan.data?.data_mode && (
+          <span className="mode-pill" data-mode={plan.data.data_mode}>
+            {plan.data.data_mode === 'demonstration'
+              ? 'Demonstration profile'
+              : plan.data.data_mode.replace(/_/g, ' ')}
+          </span>
+        )}
       </header>
+
+      {cropPlan.data && (
+        <ProposalDialog
+          farmId={farmId}
+          proposals={cropPlan.data.proposals}
+          entries={cropPlan.data.entries}
+          onAccepted={invalidatePlan}
+        />
+      )}
 
       {plan.isPending && (
         <div className="decision-loading">
@@ -552,20 +577,23 @@ export default function AnnualPlanPage() {
               {plan.data.disclaimer}
             </span>
           </div>
-          <ScenarioControls
-            rainfall={draftRainfall}
-            temperature={draftTemperature}
-            irrigationMm={draftIrrigationMm}
-            busy={plan.isFetching || scenarioBusy}
-            onRainfallChange={setDraftRainfall}
-            onTemperatureChange={setDraftTemperature}
-            onIrrigationChange={setDraftIrrigationMm}
-            onApply={() => void apply()}
-            onReset={reset}
-          />
+          <details className="planner-secondary-tools">
+            <summary>Climate what-if</summary>
+            <ScenarioControls
+              rainfall={draftRainfall}
+              temperature={draftTemperature}
+              irrigationMm={draftIrrigationMm}
+              busy={plan.isFetching || scenarioBusy}
+              onRainfallChange={setDraftRainfall}
+              onTemperatureChange={setDraftTemperature}
+              onIrrigationChange={setDraftIrrigationMm}
+              onApply={() => void apply()}
+              onReset={reset}
+            />
+          </details>
 
-          {/* Month grid — Task 5.1: saved-entry indicators */}
-          <section aria-labelledby="year-title">
+          <div className="annual-plan-workspace">
+          <section className="annual-months" aria-labelledby="year-title">
             <div className="section-heading-row">
               <div>
                 <p className="section-kicker">Twelve planting periods</p>
@@ -583,37 +611,49 @@ export default function AnnualPlanPage() {
                 >
                   <span className="month-grid-label-row">
                     {item.month.slice(0, 3)}
-                    {/* Task 5.1: Saved badge */}
                     {savedMonths.has(item.month_number) && (
                       <span className="saved-badge" aria-label="Saved entry">
                         <CheckCircle aria-hidden="true" /> Saved
                       </span>
                     )}
                   </span>
-                  {item.recommendations.slice(0, 2).map((crop) => (
-                    <strong key={crop.crop}>
-                      {crop.crop} <b>{crop.score}</b>
-                    </strong>
-                  ))}
-                  <small>{item.main_risk}</small>
+                  {item.recommendations[0] ? (
+                    <>
+                      <CropVisual cropName={item.recommendations[0].crop} />
+                      <strong className="month-crop-name">{item.recommendations[0].crop}</strong>
+                      <small className="month-status-pill">{item.recommendations[0].label}</small>
+                    </>
+                  ) : (
+                    <>
+                      <CropVisual cropName="" />
+                      <strong className="month-crop-name">No recommendation</strong>
+                    </>
+                  )}
                 </button>
               ))}
             </div>
           </section>
 
-          {/* Month detail — Task 5.2: Add to plan action */}
           <section
             className="workspace-card month-detail"
             aria-labelledby="month-detail-title"
           >
-            <div className="month-detail-heading">
-              <div>
-                <p className="section-kicker">Selected planting period</p>
-                <h2 id="month-detail-title">
-                  {plan.data.selected_month.month}
-                </h2>
+            <div className="month-detail-hero">
+              <div className="month-detail-visual">
+                <CropVisual cropName={selectedRecommendation?.crop ?? ''} />
               </div>
-              <span>{plan.data.selected_month.planting_window}</span>
+              <div>
+                <p className="month-detail-month">{plan.data.selected_month.month}</p>
+                <span>Recommended crop</span>
+                <h2 id="month-detail-title">
+                  {selectedRecommendation?.crop ?? 'No recommendation'}
+                </h2>
+                {selectedRecommendation && (
+                  <strong className="month-detail-score">
+                    {selectedRecommendation.score}% · {selectedRecommendation.label}
+                  </strong>
+                )}
+              </div>
             </div>
             <div className="climate-metrics">
               <div>
@@ -650,39 +690,14 @@ export default function AnnualPlanPage() {
               </div>
             </div>
             <div className="recommendation-grid">
-              {plan.data.selected_month.recommendations.map((crop, index) => (
+              {plan.data.selected_month.recommendations.slice(0, 1).map((crop) => (
                 <article key={crop.crop}>
-                  <div>
-                    <span>#{index + 1}</span>
-                    <b>{crop.label}</b>
+                  <div className="month-advisory">
+                    <Info aria-hidden="true" />
+                    <span><strong>Why this crop?</strong>{crop.reason}</span>
                   </div>
-                  <h3>{crop.crop}</h3>
-                  <strong className="crop-score">
-                    {crop.score}
-                    <small>/100</small>
-                  </strong>
-                  <p>{crop.reason}</p>
-                  <dl>
-                    <div>
-                      <dt>Temperature</dt>
-                      <dd>{crop.temperature_score}</dd>
-                    </div>
-                    <div>
-                      <dt>Water</dt>
-                      <dd>{crop.water_score}</dd>
-                    </div>
-                    <div>
-                      <dt>Climate safety</dt>
-                      <dd>{crop.climate_safety_score}</dd>
-                    </div>
-                  </dl>
-                  {/* Task 5.2: Add to plan button */}
                   <Dialog
-                    open={
-                      addToPlanOpen &&
-                      addToPlanCrop?.name === crop.crop &&
-                      addToPlanCrop?.monthNumber === plan.data.selected_month.month_number
-                    }
+                    open={addToPlanOpen && addToPlanCrop !== null}
                     onOpenChange={(o) => {
                       if (!o) setAddToPlanOpen(false);
                     }}
@@ -706,8 +721,7 @@ export default function AnnualPlanPage() {
                     >
                       <Plus /> Add to plan
                     </DialogTrigger>
-                    {addToPlanCrop?.name === crop.crop &&
-                      addToPlanCrop?.monthNumber === plan.data.selected_month.month_number && (
+                    {addToPlanCrop && (
                         <DialogContent showCloseButton={false}>
                           <DialogHeader>
                             <DialogTitle>Add to plan</DialogTitle>
@@ -735,7 +749,9 @@ export default function AnnualPlanPage() {
               ))}
             </div>
           </section>
+          </div>
 
+          {(scenarioResult || scenario.rainfall !== 0 || scenario.temperature !== 0) && (
           <section
             className="workspace-card comparison-card"
             aria-labelledby="comparison-title"
@@ -853,6 +869,7 @@ export default function AnnualPlanPage() {
               </div>
             )}
           </section>
+          )}
 
           <details className="assumptions-card">
             <summary>Model assumptions and limitations</summary>

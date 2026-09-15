@@ -1,6 +1,15 @@
 'use client';
 
-import { ArrowLeft, CalendarDays, FlaskConical, PlayCircle } from 'lucide-react';
+import {
+  ChevronRight,
+  CloudRain,
+  Droplets,
+  FlaskConical,
+  Layers3,
+  PlayCircle,
+  Search,
+  ThermometerSun,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -21,21 +30,18 @@ import {
   simulateCrop,
 } from '@/lib/api/crops';
 import {
+  type EnvironmentalValue,
+  type FarmTwinResult,
+  getFarmTwin,
+} from '@/lib/api/farms';
+import {
   computeScenario,
   type CropScenarioResult,
   type HazardScenarioResult,
 } from '@/lib/api/scenarios';
 
 type CultivationMode = 'rain_fed' | 'irrigated';
-type Category = 'All' | 'cereal' | 'legume' | 'vegetable' | 'root';
-
-const CATEGORY_LABELS: Record<Category, string> = {
-  All: 'All',
-  cereal: 'Cereals',
-  legume: 'Legumes',
-  vegetable: 'Vegetables',
-  root: 'Roots',
-};
+type SortOption = 'suitability' | 'name' | 'category';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -49,6 +55,16 @@ function formatDateLabel(iso: string): string {
   });
 }
 
+function evidenceValue(value: EnvironmentalValue | null | undefined): string {
+  if (value?.value === null || value?.value === undefined) return 'Unavailable';
+  return `${value.value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${value.unit}`;
+}
+
+function evidenceSource(value: EnvironmentalValue | null | undefined): string {
+  if (!value || value.value === null) return 'No current evidence';
+  return value.source || 'Farm snapshot';
+}
+
 export default function CropSimulatorPage() {
   const { farmId } = useParams<{ farmId: string }>();
 
@@ -56,8 +72,9 @@ export default function CropSimulatorPage() {
   const [plantingDate, setPlantingDate] = useState<string>(todayIso());
   const [cultivationMode, setCultivationMode] = useState<CultivationMode>('rain_fed');
   const [irrigationMm, setIrrigationMm] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<Category>('All');
+  const [categoryFilter, setCategoryFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [sortOption, setSortOption] = useState<SortOption>('suitability');
 
   // --- Results state ---
   const [rankedResults, setRankedResults] = useState<SimulationResult[]>([]);
@@ -67,6 +84,7 @@ export default function CropSimulatorPage() {
 
   // --- Crop register (for detail panel metadata) ---
   const [cropEntries, setCropEntries] = useState<CropEntry[]>([]);
+  const [twin, setTwin] = useState<FarmTwinResult | null>(null);
 
   // --- Scenario controls state ---
   const [draftRainfall, setDraftRainfall] = useState(0);
@@ -97,6 +115,17 @@ export default function CropSimulatorPage() {
     return () => controller.abort();
   }, []);
 
+  // Load the existing Digital Twin once for the evidence strip. Simulator scores
+  // remain sourced from simulateCrop(); this request only exposes raw farm values.
+  useEffect(() => {
+    const controller = new AbortController();
+    getFarmTwin(farmId, controller.signal).then(
+      (result) => setTwin(result),
+      () => setTwin(null),
+    );
+    return () => controller.abort();
+  }, [farmId]);
+
   // --- Load ranked list ---
   const loadRanked = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -118,6 +147,11 @@ export default function CropSimulatorPage() {
       if ('ranked' in response) {
         const ranking = response as CropRankingResponse;
         setRankedResults(ranking.ranked);
+        setSelectedResult((current) =>
+          ranking.ranked.find((item) => item.crop_name === current?.crop_name) ??
+          ranking.ranked[0] ??
+          null,
+        );
         setDataMode(ranking.data_mode);
         setSnapshotId(ranking.snapshot_id);
       }
@@ -174,11 +208,6 @@ export default function CropSimulatorPage() {
     }
   }, [farmId, plantingDate, cultivationMode, irrigationMm, rankedResults, selectedResult]);
 
-  // Clear selected result when controls change so the panel doesn't show stale data
-  useEffect(() => {
-    setSelectedResult(null);
-  }, [plantingDate, cultivationMode, irrigationMm]);
-
   // --- Scenario handlers ---
   const handleScenarioApply = async () => {
     if (!snapshotId) return; // no snapshot — controls should not be shown
@@ -212,6 +241,10 @@ export default function CropSimulatorPage() {
   };
 
   // --- Filtering ---
+  const availableCategories = Array.from(
+    new Set(cropEntries.map((entry) => entry.category).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
+
   const filteredResults = rankedResults.filter((r) => {
     const matchCategory =
       categoryFilter === 'All' ||
@@ -220,6 +253,14 @@ export default function CropSimulatorPage() {
       searchQuery === '' ||
       r.crop_name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchCategory && matchSearch;
+  }).sort((a, b) => {
+    if (sortOption === 'name') return a.crop_name.localeCompare(b.crop_name);
+    if (sortOption === 'category') {
+      const aCategory = cropEntries.find((entry) => entry.name === a.crop_name)?.category ?? '';
+      const bCategory = cropEntries.find((entry) => entry.name === b.crop_name)?.category ?? '';
+      return aCategory.localeCompare(bCategory) || b.suitability_index - a.suitability_index;
+    }
+    return b.suitability_index - a.suitability_index;
   });
 
   const selectedCropEntry =
@@ -232,22 +273,50 @@ export default function CropSimulatorPage() {
     ? `Snapshot-backed · ${snapshotId.slice(0, 8)}…`
     : null;
 
+  const soilValue = twin?.soil?.depth_0_5cm?.phh2o;
+  const waterValue = twin?.satellite?.ndmi;
+  const evidenceCards = [
+    {
+      label: 'Temperature',
+      value: twin?.status === 'ready' ? evidenceValue(twin.weather?.temperature_2m) : 'Unavailable',
+      source: twin?.status === 'ready' ? evidenceSource(twin.weather?.temperature_2m) : 'Farm analysis is not ready',
+      icon: ThermometerSun,
+    },
+    {
+      label: 'Rainfall',
+      value: twin?.status === 'ready' ? evidenceValue(twin.weather?.precipitation) : 'Unavailable',
+      source: twin?.status === 'ready' ? evidenceSource(twin.weather?.precipitation) : 'Farm analysis is not ready',
+      icon: CloudRain,
+    },
+    {
+      label: 'Soil pH',
+      value: twin?.status === 'ready' ? evidenceValue(soilValue) : 'Unavailable',
+      source: twin?.status === 'ready' ? evidenceSource(soilValue) : 'Farm analysis is not ready',
+      icon: Layers3,
+    },
+    {
+      label: 'Water / moisture',
+      value: twin?.status === 'ready' ? evidenceValue(waterValue) : 'Unavailable',
+      source: twin?.status === 'ready' ? evidenceSource(waterValue) : 'Farm analysis is not ready',
+      icon: Droplets,
+    },
+  ];
+
   return (
     <div className="crops-page content-stack">
-      <Link className="back-link" href={`/app/farms/${farmId}/twin`}>
-        <ArrowLeft /> Back to farm
-      </Link>
+      <nav className="crops-breadcrumb" aria-label="Breadcrumb">
+        <Link href={`/app/farms/${farmId}/twin`}>Crop Simulator</Link>
+        <ChevronRight aria-hidden="true" />
+        <span>What if I grow this?</span>
+      </nav>
 
       {/* Page header */}
       <header className="page-heading crops-heading">
         <div>
-          <p className="section-kicker">
-            <FlaskConical aria-hidden="true" /> Crop Simulator
-          </p>
-          <h1>What can I grow here?</h1>
+          <p className="section-kicker"><FlaskConical aria-hidden="true" /> Farm suitability</p>
+          <h1>What if I grow this?</h1>
           <p>
-            Ranked by agronomic suitability. Scores use your farm&apos;s environmental
-            data when a snapshot is available, otherwise a demonstration profile.
+            Compare crops using current weather, climate, soil, terrain and farm conditions.
           </p>
         </div>
         {dataMode && (
@@ -263,8 +332,16 @@ export default function CropSimulatorPage() {
         )}
       </header>
 
-      {/* Controls bar */}
-      <section className="crops-controls workspace-card" aria-label="Simulation controls">
+      <section className="environment-summary" aria-label="Current farm evidence">
+        {evidenceCards.map(({ label, value, source, icon: Icon }) => (
+          <article key={label} className="environment-card workspace-card">
+            <span className="environment-icon"><Icon aria-hidden="true" /></span>
+            <span><small>{label}</small><strong>{value}</strong><em>{source}</em></span>
+          </article>
+        ))}
+      </section>
+
+      <section className="crops-controls workspace-card" aria-label="Simulation settings">
         <div className="control-group">
           <label htmlFor="planting-date" className="control-label">
             Planting date
@@ -328,70 +405,8 @@ export default function CropSimulatorPage() {
           </div>
         )}
 
-        {/* Add to plan — Phase 8 stub */}
-        {selectedResult && (
-          <Button
-            variant="outline"
-            render={
-              <Link
-                href={`/app/farms/${farmId}/annual-plan`}
-                aria-label={`Add ${selectedResult.crop_name} to annual crop plan`}
-              />
-            }
-          >
-            <CalendarDays /> Add to crop plan
-          </Button>
-        )}
+        <span className="simulation-date-note">Results for {formatDateLabel(plantingDate)}</span>
       </section>
-
-      {/* Filter row */}
-      <div className="crops-filter-row" role="search" aria-label="Filter crops">
-        <div className="category-chips" role="radiogroup" aria-label="Category filter">
-          {(Object.keys(CATEGORY_LABELS) as Category[]).map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              role="radio"
-              aria-checked={categoryFilter === cat}
-              data-active={categoryFilter === cat || undefined}
-              onClick={() => setCategoryFilter(cat)}
-              className="category-chip"
-            >
-              {CATEGORY_LABELS[cat]}
-            </button>
-          ))}
-        </div>
-        <input
-          type="search"
-          className="crop-search-input"
-          placeholder="Search crops…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          aria-label="Search crops by name"
-        />
-      </div>
-
-      {/* Scenario controls — only shown when snapshot is available (Req 4.4) */}
-      {snapshotId ? (
-        <ScenarioControls
-          rainfall={draftRainfall}
-          temperature={draftTemperature}
-          irrigationMm={draftIrrigationMm}
-          busy={scenarioBusy}
-          onRainfallChange={setDraftRainfall}
-          onTemperatureChange={setDraftTemperature}
-          onIrrigationChange={setDraftIrrigationMm}
-          onApply={() => void handleScenarioApply()}
-          onReset={handleScenarioReset}
-        />
-      ) : !loading && !error && dataMode !== null && (
-        <div className="scenario-unavailable-notice workspace-card" role="status">
-          <p>
-            <strong>Climate What-If requires a completed farm snapshot.</strong>{' '}
-            Run an analysis from the farm twin page to unlock scenario controls.
-          </p>
-        </div>
-      )}
 
       {/* Error states */}
       {error && (
@@ -422,13 +437,50 @@ export default function CropSimulatorPage() {
 
       {/* Main content area */}
       {!error && (
-        <div className="crops-layout" data-panel-open={selectedResult !== null || undefined}>
+        <div className="crops-workspace workspace-card">
+          <div className="crops-layout">
           {/* Crop grid */}
           <section
             className="crops-grid-section"
             aria-label="Crop suitability rankings"
             aria-busy={loading}
           >
+            <div className="crops-filter-row" role="search" aria-label="Filter crops">
+              <label className="crop-search-wrap">
+                <span className="sr-only">Search crops by name</span>
+                <Search aria-hidden="true" />
+                <input
+                  type="search"
+                  className="crop-search-input"
+                  placeholder="Search crops (e.g. maize, tomato, kale...)"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </label>
+              <div className="category-chips" role="radiogroup" aria-label="Category filter">
+                {['All', ...availableCategories].map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    role="radio"
+                    aria-checked={categoryFilter === category}
+                    data-active={categoryFilter === category || undefined}
+                    onClick={() => setCategoryFilter(category)}
+                    className="category-chip"
+                  >
+                    {category === 'All' ? category : `${category.charAt(0).toUpperCase()}${category.slice(1)}s`}
+                  </button>
+                ))}
+              </div>
+              <label className="crop-sort">
+                <span>Sort by</span>
+                <select value={sortOption} onChange={(event) => setSortOption(event.target.value as SortOption)}>
+                  <option value="suitability">Suitability</option>
+                  <option value="name">Crop name</option>
+                  <option value="category">Category</option>
+                </select>
+              </label>
+            </div>
             {loading ? (
               <div className="crops-skeleton-grid">
                 {Array.from({ length: 12 }).map((_, i) => (
@@ -447,6 +499,7 @@ export default function CropSimulatorPage() {
                     <div key={result.crop_name} role="listitem">
                       <CropCard
                         result={result}
+                        category={cropEntries.find((entry) => entry.name === result.crop_name)?.category}
                         selected={selectedResult?.crop_name === result.crop_name}
                         onClick={() => void handleSelectCrop(result.crop_name)}
                       />
@@ -458,19 +511,49 @@ export default function CropSimulatorPage() {
           </section>
 
           {/* Detail panel */}
-          {(selectedResult || selectedLoading) && (
             <aside className="crops-detail-aside" aria-label="Crop detail panel">
               {selectedLoading ? (
                 <div className="crops-detail-loading workspace-card">
                   <Skeleton className="h-64 w-full rounded-2xl" />
                 </div>
               ) : selectedResult ? (
-                <CropDetailPanel result={selectedResult} cropEntry={selectedCropEntry} />
-              ) : null}
+                <CropDetailPanel
+                  result={selectedResult}
+                  cropEntry={selectedCropEntry}
+                  planHref={`/app/farms/${farmId}/annual-plan?crop=${encodeURIComponent(selectedResult.crop_name)}&month=${Number(plantingDate.slice(5, 7))}`}
+                />
+              ) : (
+                <div className="crop-detail-empty">
+                  <FlaskConical aria-hidden="true" />
+                  <h2>Select a crop</h2>
+                  <p>Choose a crop to inspect its suitability, requirements and risks.</p>
+                </div>
+              )}
             </aside>
-          )}
+          </div>
         </div>
       )}
+
+      <details className="scenario-disclosure">
+        <summary>Climate what-if</summary>
+        {snapshotId ? (
+          <ScenarioControls
+            rainfall={draftRainfall}
+            temperature={draftTemperature}
+            irrigationMm={draftIrrigationMm}
+            busy={scenarioBusy}
+            onRainfallChange={setDraftRainfall}
+            onTemperatureChange={setDraftTemperature}
+            onIrrigationChange={setDraftIrrigationMm}
+            onApply={() => void handleScenarioApply()}
+            onReset={handleScenarioReset}
+          />
+        ) : !loading && !error && dataMode !== null ? (
+          <div className="scenario-unavailable-notice workspace-card" role="status">
+            <p><strong>Climate What-If requires a completed farm snapshot.</strong> Run an analysis from the farm twin page to unlock scenario controls.</p>
+          </div>
+        ) : null}
+      </details>
 
       {/* Scenario comparison — shown after applying a real scenario (Req 2.3, 2.4) */}
       {scenarioResult && (
