@@ -1,6 +1,6 @@
-# Crop Simulator & Annual Planner - Frontend Architecture Guide
+# Crop Simulator, Disaster Center & Annual Planner - Frontend Architecture Guide
 
-This document provides a concise explanation of how the Crop Simulator and Annual Crop Planner pages work. Use this to understand the structure without reading all the code.
+This document provides a concise explanation of how the Crop Simulator, Disaster Center (Risk Center), and Annual Crop Planner pages work. Use this to understand the structure without reading all the code.
 
 ---
 
@@ -85,7 +85,126 @@ Display comparison table (baseline vs scenario)
 
 ---
 
-## 2. Annual Planner Page (`/app/farms/[farmId]/annual-plan`)
+## 2. Disaster Center Page (`/app/farms/[farmId]/risks`)
+
+**Purpose**: Display hazard assessments for five climate-related risks and provide actionable recommendations.
+
+### Key Components
+
+#### Main Page Component
+- **Location**: `frontend/app/app/farms/[farmId]/risks/page.tsx`
+- **State Management**:
+  - Data: `risks` (RiskResponse with all assessments)
+  - Selection: `selectedHazard` (string | null)
+  - Loading: `loading`, `error`
+
+#### Data Flow
+```
+Page loads
+  ↓
+loadRisks()
+  ↓
+API: getFarmRisks(farmId) → /api/v1/farms/{id}/risks
+  ↓
+Returns: RiskResponse {
+  farm_id,
+  assessments: HazardAssessment[],  // 5 hazards
+  engine_version,
+  snapshot_id,
+  data_mode
+}
+  ↓
+setRisks(data)
+  ↓
+Display 5 hazard cards in grid
+```
+
+#### Selection Flow
+```
+User clicks hazard card
+  ↓
+setSelectedHazard(hazard)
+  ↓
+Find assessment from risks.assessments
+  ↓
+Display HazardDetailPanel in sidebar
+```
+
+#### Action Completion Flow
+```
+User clicks action checkbox
+  ↓
+completeAction(farmId, actionId)
+  ↓
+API: PATCH /api/v1/farms/{id}/actions/{actionId}
+  ↓
+Returns: { action_id, completed: true, completed_at }
+  ↓
+Optimistically update local state (setRisks)
+  ↓
+Checkbox shows as completed
+```
+
+### UI Components
+
+#### HazardCard (inline component)
+- Displays: hazard name, level badge, explanation, driver, action completion count
+- Level colors: Low (green), Medium (amber), High (red), Unknown (gray)
+- Click to select/deselect
+
+#### HazardDetailPanel (inline component)
+- **Header**: Hazard name, horizon (current/7-day/seasonal), level badge
+- **Content**:
+  - Explanation text
+  - Hazard index (0-100)
+  - At-risk crops list
+  - Evidence inputs (shows data completeness)
+  - Recommended actions list
+  - Driver and threshold note
+
+#### ActionRow (inline component)
+- Displays: priority (P1, P2, P3), action text, source, review date
+- Checkbox: Circle icon (uncompleted) → CheckCircle (completed)
+- Click to mark as complete (only if not already completed)
+- Shows completion date when done
+
+### Hazard Types
+The system assesses 5 hazards:
+1. **Drought** - Water scarcity risk
+2. **Heat Stress** - High temperature impact
+3. **Heavy Rainfall** - Excessive precipitation
+4. **Flood Exposure** - Inundation risk
+5. **Wind** - Wind damage potential
+
+### Hazard Assessment Structure
+```typescript
+HazardAssessment {
+  hazard: string,                    // e.g., "drought", "heat"
+  index: number,                     // 0-100 intensity
+  level: 'Low' | 'Medium' | 'High' | 'Unknown',
+  driver: string,                    // e.g., "rainfall_deficit"
+  explanation: string,               // Human-readable assessment
+  horizon: 'current' | 'short_term' | 'seasonal',
+  at_risk_crops: string[],          // Crops vulnerable to this hazard
+  actions: ActionRule[],            // Recommended actions
+  evidence_used: Record<string, string>,  // Data completeness map
+  engine_version: string,
+  snapshot_id: string | null,
+  data_mode: string
+}
+```
+
+### Key Features
+1. **Evidence-based assessment**: Shows what data was used (not probability)
+2. **Unknown handling**: Missing data = "Unknown" (not assumed safe)
+3. **Actionable recommendations**: Priority-based action list
+4. **Action tracking**: Mark actions as complete, persisted to backend
+5. **Horizon labeling**: Clear indication of timeframe (current/7-day/seasonal)
+6. **At-risk crop identification**: Which crops are vulnerable
+
+---
+
+## 3. Annual Planner Page (`/app/farms/[farmId]/annual-plan`)
 
 **Purpose**: Help users plan their growing year by comparing 12 monthly planting periods and saving entries.
 
@@ -219,7 +338,7 @@ API: POST /api/v1/farms/{id}/crop-plan/proposals/{id}/accept|dismiss
 
 ---
 
-## 3. API Integration Patterns
+## 4. API Integration Patterns
 
 ### Crop Simulator APIs
 ```typescript
@@ -234,6 +353,26 @@ simulateCrop(farmId, { crop_name, planting_date, cultivation_mode, irrigation_mm
 // Compute climate scenario
 computeScenario(farmId, name, { rainfall_change_pct, temperature_change_c, irrigation_mm_override? })
 → ScenarioResponse { crops: CropScenarioResult[], hazards: HazardScenarioResult[] }
+```
+
+### Disaster Center APIs
+```typescript
+// Get all hazard assessments
+getFarmRisks(farmId)
+→ RiskResponse { 
+  assessments: HazardAssessment[],  // Always 5 hazards
+  engine_version,
+  snapshot_id,
+  data_mode
+}
+
+// Mark action as complete
+completeAction(farmId, actionId)
+→ ActionCompletionResponse { 
+  action_id, 
+  completed: true, 
+  completed_at: "2026-09-15T10:30:00Z" 
+}
 ```
 
 ### Annual Planner APIs
@@ -255,10 +394,10 @@ dismissChangeProposal(farmId, proposalId) → void
 
 ---
 
-## 4. Shared Patterns
+## 5. Shared Patterns
 
 ### Data Mode System
-Both pages support two modes:
+All three pages support two modes:
 - **Demonstration**: Uses sample data when no farm snapshot exists
 - **Snapshot-backed**: Uses real farm environmental data from completed analysis
 
@@ -267,33 +406,33 @@ Check: `data_mode` field in API responses
 - `snapshot` → Show "Snapshot-backed" pill + snapshot_id
 
 ### State Management
-Both use React Query (`useQuery`, `useMutation`) for:
-- Automatic caching
-- Background refetching
-- Loading/error states
-- Optimistic updates
+All pages use:
+- **React hooks** for local state (useState, useEffect, useCallback)
+- **React Query** (useQuery, useMutation) for Crop Simulator and Annual Planner
+- **Manual fetch** for Disaster Center (simpler data flow)
 
 ### Error Handling
 Custom error classes:
 - `CropApiError` / `CropValidationError`
 - `PlannerApiError` / `PlannerConflictError`
 - `ScenarioApiError`
+- `RiskApiError`
 
 All mapped from base `FarmTwinApiError`
 
 ### Loading States
 - Initial load: Show skeleton screens
-- Selected crop load: Show skeleton in sidebar
-- Scenario compute: Disable controls, show "busy" state
+- Selected item load: Show skeleton in sidebar/panel
+- Action completion: Disable button, show busy state
 
 ### Validation
 - Client-side: Form validation (required fields, number ranges)
 - Server-side: API returns 422 with error details
-- Display: Toast notifications for errors
+- Display: Toast notifications for errors (planner) or inline messages (simulator)
 
 ---
 
-## 5. Quick Reference for Editing
+## 6. Quick Reference for Editing
 
 ### To modify Crop Simulator controls:
 1. Edit state in `page.tsx` (lines 35-45)
@@ -304,6 +443,23 @@ All mapped from base `FarmTwinApiError`
 1. Edit `CropDetailPanel.tsx` component
 2. Tabs are hardcoded: "overview", "requirements", "risks"
 3. Component scores mapped via `COMPONENT_LABELS` object
+
+### To modify Disaster Center:
+1. Edit `frontend/app/app/farms/[farmId]/risks/page.tsx`
+2. Hazard cards in grid: `HazardCard` component (inline)
+3. Detail panel: `HazardDetailPanel` component (inline)
+4. Action completion: `ActionRow` component (inline)
+5. Hazard labels: `hazardLabel()` helper function
+
+### To add new hazard types:
+1. Update `hazardLabel()` function to include new hazard name
+2. Backend will automatically include it in assessments array
+3. No other frontend changes needed (renders dynamically)
+
+### To modify action tracking:
+1. Edit `ActionRow` component for UI changes
+2. Update `completeAction()` API client if endpoint changes
+3. Modify `handleActionComplete()` for state update logic
 
 ### To add new planner features:
 1. Add state to `AnnualPlanPage` component
@@ -317,7 +473,7 @@ All mapped from base `FarmTwinApiError`
 
 ---
 
-## 6. TypeScript Types Summary
+## 7. TypeScript Types Summary
 
 ### Core Types
 ```typescript
@@ -326,6 +482,18 @@ SimulationResult {
   crop_name, suitability_index, label, components, limiting_factor,
   reason, hard_exclusion, hard_exclusion_reason, engine_version,
   snapshot_id, data_mode, input_completeness
+}
+
+// Hazard assessment
+HazardAssessment {
+  hazard, index, level, driver, explanation, horizon,
+  at_risk_crops, actions, evidence_used, engine_version,
+  snapshot_id, data_mode
+}
+
+ActionRule {
+  id, priority, text, source, review_date,
+  completed, completed_at
 }
 
 // Plan entry
@@ -349,20 +517,37 @@ CropScenarioResult {
 
 ---
 
+## 8. Component Comparison
+
+| Feature | Crop Simulator | Disaster Center | Annual Planner |
+|---------|---------------|-----------------|----------------|
+| **Main view** | Grid of crop cards | Grid of hazard cards | Month grid + detail |
+| **Selection** | Click card → sidebar | Click card → sidebar | Click month → detail |
+| **Data refresh** | On control change | On page load | On month/scenario change |
+| **State management** | Local state + useEffect | Local state + useEffect | React Query |
+| **Filtering** | Category + search | None | None |
+| **Actions** | View details, add to plan | Mark actions complete | Add/delete entries, proposals |
+| **Scenario support** | Yes (climate what-if) | No | Yes (climate what-if) |
+| **Persistence** | None | Action completion | Plan entries |
+
+---
+
 ## Summary
 
-Both pages follow similar patterns:
-1. **User controls** trigger API calls via React Query
+All three pages follow similar patterns:
+1. **User controls/selection** trigger API calls or state updates
 2. **API responses** update local state
 3. **Components render** from state with loading/error handling
-4. **Mutations** (add/delete entries) invalidate queries to refetch fresh data
-5. **Scenario mode** switches between demo and real data based on snapshot availability
+4. **Mutations** (add/delete/complete) update backend and local state
+5. **Data mode** switches between demo and real data based on snapshot availability
 
 Key files to understand:
 - `frontend/app/app/farms/[farmId]/crops/page.tsx` - Crop simulator page
+- `frontend/app/app/farms/[farmId]/risks/page.tsx` - Disaster center page
 - `frontend/app/app/farms/[farmId]/annual-plan/page.tsx` - Annual planner page
 - `frontend/features/crops/CropCard.tsx` - Crop card component
 - `frontend/features/crops/CropDetailPanel.tsx` - Crop detail panel
 - `frontend/lib/api/crops.ts` - Crop API client
+- `frontend/lib/api/risks.ts` - Risk API client
 - `frontend/lib/api/planner.ts` - Planner API client
 - `frontend/lib/api/scenarios.ts` - Scenario API client

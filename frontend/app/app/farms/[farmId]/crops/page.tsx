@@ -15,7 +15,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiErrorState } from '@/components/api-state';
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScenarioControls } from '@/features/decision/ScenarioControls';
 import { CropCard } from '@/features/crops/CropCard';
@@ -147,11 +147,6 @@ export default function CropSimulatorPage() {
       if ('ranked' in response) {
         const ranking = response as CropRankingResponse;
         setRankedResults(ranking.ranked);
-        setSelectedResult((current) =>
-          ranking.ranked.find((item) => item.crop_name === current?.crop_name) ??
-          ranking.ranked[0] ??
-          null,
-        );
         setDataMode(ranking.data_mode);
         setSnapshotId(ranking.snapshot_id);
       }
@@ -172,7 +167,7 @@ export default function CropSimulatorPage() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    void loadRanked(controller.signal);
+    queueMicrotask(() => void loadRanked(controller.signal));
     return () => controller.abort();
   }, [loadRanked]);
 
@@ -360,29 +355,25 @@ export default function CropSimulatorPage() {
           <span className="control-label" id="cultivation-mode-label">
             Cultivation mode
           </span>
-          <div
-            className="cultivation-toggle"
-            role="radiogroup"
-            aria-labelledby="cultivation-mode-label"
-          >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={cultivationMode === 'rain_fed'}
-              data-active={cultivationMode === 'rain_fed' || undefined}
-              onClick={() => setCultivationMode('rain_fed')}
-            >
-              Rain-fed
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={cultivationMode === 'irrigated'}
-              data-active={cultivationMode === 'irrigated' || undefined}
-              onClick={() => setCultivationMode('irrigated')}
-            >
-              Irrigated
-            </button>
+          <div className="cultivation-toggle" role="radiogroup" aria-labelledby="cultivation-mode-label">
+            <label data-active={cultivationMode === 'rain_fed' || undefined}>
+              <input
+                type="radio"
+                name="cultivation-mode"
+                checked={cultivationMode === 'rain_fed'}
+                onChange={() => setCultivationMode('rain_fed')}
+              />
+              <span>Rain-fed</span>
+            </label>
+            <label data-active={cultivationMode === 'irrigated' || undefined}>
+              <input
+                type="radio"
+                name="cultivation-mode"
+                checked={cultivationMode === 'irrigated'}
+                onChange={() => setCultivationMode('irrigated')}
+              />
+              <span>Irrigated</span>
+            </label>
           </div>
         </div>
 
@@ -426,12 +417,12 @@ export default function CropSimulatorPage() {
           <p>
             <strong>Missing analysis inputs:</strong> {validationMessage}
           </p>
-          <Button
-            variant="outline"
-            render={<Link href={`/app/farms/${farmId}/twin`} />}
+          <Link
+            className={buttonVariants({ variant: 'outline' })}
+            href={`/app/farms/${farmId}/twin`}
           >
             <PlayCircle /> Run analysis to get real data
-          </Button>
+          </Link>
         </div>
       )}
 
@@ -445,7 +436,7 @@ export default function CropSimulatorPage() {
             aria-label="Crop suitability rankings"
             aria-busy={loading}
           >
-            <div className="crops-filter-row" role="search" aria-label="Filter crops">
+            <div className="crops-filter-row" aria-label="Filter crops">
               <label className="crop-search-wrap">
                 <span className="sr-only">Search crops by name</span>
                 <Search aria-hidden="true" />
@@ -457,13 +448,12 @@ export default function CropSimulatorPage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </label>
-              <div className="category-chips" role="radiogroup" aria-label="Category filter">
+              <div className="category-chips" aria-label="Category filter">
                 {['All', ...availableCategories].map((category) => (
                   <button
                     key={category}
                     type="button"
-                    role="radio"
-                    aria-checked={categoryFilter === category}
+                    aria-pressed={categoryFilter === category}
                     data-active={categoryFilter === category || undefined}
                     onClick={() => setCategoryFilter(category)}
                     className="category-chip"
@@ -494,18 +484,18 @@ export default function CropSimulatorPage() {
                     No crops match the current filter.
                   </p>
                 )}
-                <div className="crops-grid" role="list">
+                <ul className="crops-grid">
                   {filteredResults.map((result) => (
-                    <div key={result.crop_name} role="listitem">
+                    <li key={result.crop_name}>
                       <CropCard
                         result={result}
                         category={cropEntries.find((entry) => entry.name === result.crop_name)?.category}
                         selected={selectedResult?.crop_name === result.crop_name}
                         onClick={() => void handleSelectCrop(result.crop_name)}
                       />
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </>
             )}
           </section>
@@ -549,9 +539,9 @@ export default function CropSimulatorPage() {
             onReset={handleScenarioReset}
           />
         ) : !loading && !error && dataMode !== null ? (
-          <div className="scenario-unavailable-notice workspace-card" role="status">
+          <output className="scenario-unavailable-notice workspace-card">
             <p><strong>Climate What-If requires a completed farm snapshot.</strong> Run an analysis from the farm twin page to unlock scenario controls.</p>
-          </div>
+          </output>
         ) : null}
       </details>
 

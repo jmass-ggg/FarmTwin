@@ -92,7 +92,7 @@ function AddToPlanForm({
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data: PlanEntryCreate = {
       crop_name: cropName,
@@ -127,9 +127,9 @@ function AddToPlanForm({
         />
       </div>
 
-      <div className="planner-form-field">
-        <label>Cultivation mode</label>
-        <div className="planner-radio-group" role="group" aria-label="Cultivation mode">
+      <fieldset className="planner-form-field">
+        <legend>Cultivation mode</legend>
+        <div className="planner-radio-group">
           <label>
             <input
               type="radio"
@@ -151,7 +151,7 @@ function AddToPlanForm({
             Irrigated
           </label>
         </div>
-      </div>
+      </fieldset>
 
       {cultivationMode === 'irrigated' && (
         <div className="planner-form-field">

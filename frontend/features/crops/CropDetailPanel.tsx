@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { CropEntry, SimulationResult } from '@/lib/api/crops';
 import { CropVisual } from './CropCard';
@@ -178,9 +178,9 @@ export function CropDetailPanel({ result, cropEntry, planHref }: CropDetailPanel
           </div>
         </TabsContent>
       </Tabs>
-      <Button className="crop-plan-action" render={<Link href={planHref} />}>
+      <Link className={buttonVariants({ className: 'crop-plan-action' })} href={planHref}>
         <CalendarPlus /> Add to Crop Plan
-      </Button>
+      </Link>
     </div>
   );
 }

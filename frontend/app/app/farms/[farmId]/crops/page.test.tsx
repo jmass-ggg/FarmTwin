@@ -129,7 +129,7 @@ describe('CropSimulatorPage', () => {
     await waitFor(() => expect(screen.getByText('Maize')).toBeInTheDocument());
 
     // Click the Maize card
-    await user.click(screen.getByText('Maize').closest('[role="button"]')!);
+    await user.click(screen.getByText('Maize').closest('button')!);
 
     // simulateCrop should have been called with crop_name: 'Maize'
     await waitFor(() =>
@@ -188,7 +188,7 @@ describe('CropSimulatorPage', () => {
     await waitFor(() => expect(screen.getByText('Maize')).toBeInTheDocument());
 
     // The crop card should show "Not suitable" text
-    const card = screen.getByText('Maize').closest<HTMLElement>('[role="button"]')!;
+    const card = screen.getByText('Maize').closest<HTMLElement>('button')!;
     expect(within(card).getByText(/Not suitable/)).toBeInTheDocument();
 
     // Click the card to open detail panel

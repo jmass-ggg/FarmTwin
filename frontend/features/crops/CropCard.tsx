@@ -1,6 +1,19 @@
 import { Check, Sprout } from 'lucide-react';
 
 import type { SimulationResult } from '@/lib/api/crops';
+import beansImage from '@/photos/beans.png';
+import cabbageImage from '@/photos/cabbage.png';
+import carrotImage from '@/photos/carrot.png';
+import cowpeaImage from '@/photos/cowpea.png';
+import maizeImage from '@/photos/maize.png';
+import onionImage from '@/photos/onion.png';
+import riceImage from '@/photos/rice.png';
+import sorghumImage from '@/photos/sorghum.png';
+import sweetPotatoImage from '@/photos/sweet_photo.png';
+import tomatoImage from '@/photos/tomatos.png';
+import wheatImage from '@/photos/wheat.png';
+
+type CropImageAsset = typeof beansImage;
 
 interface CropCardProps {
   result: SimulationResult;
@@ -27,11 +40,45 @@ const CROP_GLYPHS: Array<[string, string]> = [
   ['pea', '🫛'],
 ];
 
+const CROP_IMAGES: Array<[string, CropImageAsset]> = [
+  ['sweet potato', sweetPotatoImage],
+  ['soybean', beansImage],
+  ['soy bean', beansImage],
+  ['cowpea', cowpeaImage],
+  ['maize', maizeImage],
+  ['corn', maizeImage],
+  ['beans', beansImage],
+  ['bean', beansImage],
+  ['tomatoes', tomatoImage],
+  ['tomato', tomatoImage],
+  ['cabbage', cabbageImage],
+  ['carrot', carrotImage],
+  ['onion', onionImage],
+  ['rice', riceImage],
+  ['wheat', wheatImage],
+  ['sorghum', sorghumImage],
+];
+
 export function CropVisual({ cropName }: { cropName: string }) {
-  const glyph = CROP_GLYPHS.find(([name]) => cropName.toLowerCase().includes(name))?.[1];
+  const normalizedName = cropName.trim().toLowerCase();
+  const image = CROP_IMAGES.find(([name]) => normalizedName.includes(name))?.[1];
+  const glyph = CROP_GLYPHS.find(([name]) => normalizedName.includes(name))?.[1];
+  const imageSrc = typeof image === 'string' ? image : image?.src;
+
   return (
     <span className="crop-visual" aria-hidden="true">
-      {glyph ?? <Sprout />}
+      {imageSrc ? (
+        // oxlint-disable-next-line next/no-img-element -- Vite imports these small local crop assets and Vitest does not resolve next/image.
+        <img
+          className="crop-visual-image"
+          src={imageSrc}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        glyph ?? <Sprout />
+      )}
     </span>
   );
 }
