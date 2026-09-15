@@ -3,16 +3,13 @@
 import {
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Circle,
-  CloudRain,
   Database,
-  Droplets,
-  MapPinned,
-  ShieldAlert,
-  ThermometerSun,
-  Waves,
-  Wind,
+  Search,
+  ShieldCheck,
 } from 'lucide-react';
+import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -28,21 +25,28 @@ import {
 } from '@/lib/api/risks';
 
 const HAZARD_ORDER = ['flood_exposure', 'drought', 'heat', 'heavy_rainfall', 'wind'];
+const HAZARD_IMAGES: Record<string, string> = {
+  flood_exposure: '/photos/flood.png',
+  drought: '/photos/drought.png',
+  heat: '/photos/Heat.png',
+  heavy_rainfall: '/photos/rainfall.png',
+  wind: '/photos/wind.png',
+};
 
 function hazardLabel(hazard: string): string {
   const labels: Record<string, string> = {
-    drought: 'Drought',
-    heat: 'Heat Stress',
+    drought: 'Drought Risk',
+    heat: 'Extreme Heat',
     heavy_rainfall: 'Heavy Rainfall',
-    flood_exposure: 'Flood Exposure',
-    wind: 'Wind',
+    flood_exposure: 'Flood Risk',
+    wind: 'Strong Wind',
   };
   return labels[hazard] ?? hazard.replace(/_/g, ' ');
 }
 
-function selectorLabel(hazard: string): string {
+function comparisonLabel(hazard: string): string {
   const labels: Record<string, string> = {
-    flood_exposure: 'Flood Risk',
+    flood_exposure: 'Flood',
     drought: 'Drought',
     heat: 'Heat',
     heavy_rainfall: 'Rainfall',
@@ -69,13 +73,16 @@ function orderedAssessments(assessments: HazardAssessment[]): HazardAssessment[]
   });
 }
 
-function HazardIcon({ hazard }: { hazard: string }) {
-  if (hazard === 'drought') return <Droplets aria-hidden="true" />;
-  if (hazard === 'heat') return <ThermometerSun aria-hidden="true" />;
-  if (hazard === 'heavy_rainfall') return <CloudRain aria-hidden="true" />;
-  if (hazard === 'flood_exposure') return <Waves aria-hidden="true" />;
-  if (hazard === 'wind') return <Wind aria-hidden="true" />;
-  return <ShieldAlert aria-hidden="true" />;
+function HazardImage({ hazard, size = 24 }: { hazard: string; size?: number }) {
+  return (
+    <Image
+      src={HAZARD_IMAGES[hazard] ?? HAZARD_IMAGES.flood_exposure}
+      alt=""
+      width={size}
+      height={size}
+      className="risk-hazard-image"
+    />
+  );
 }
 
 function LevelBadge({ level }: { level: HazardAssessment['level'] }) {
@@ -122,6 +129,7 @@ function ActionRow({ action, farmId, onComplete }: ActionRowProps) {
       </button>
       <div className="action-content">
         <div className="action-meta">
+          <ShieldCheck className="risk-action-icon" aria-hidden="true" />
           <span className="action-priority" aria-label={`Priority ${action.priority}`}>P{action.priority}</span>
           {action.completed && action.completed_at && (
             <span className="action-completed-label">
@@ -145,7 +153,7 @@ function HazardDetailPanel({ assessment }: { assessment: HazardAssessment }) {
       <div className="risk-detail-header">
         <div className="risk-detail-title">
           <span className="risk-detail-hazard-icon" data-hazard={assessment.hazard}>
-            <HazardIcon hazard={assessment.hazard} />
+            <HazardImage hazard={assessment.hazard} size={26} />
           </span>
           <div>
             <p className="section-kicker">Selected hazard</p>
@@ -154,6 +162,8 @@ function HazardDetailPanel({ assessment }: { assessment: HazardAssessment }) {
         </div>
         <LevelBadge level={assessment.level} />
       </div>
+
+      <p className="risk-detail-context">Current assessment from the available environmental evidence for this farm.</p>
 
       {hasEvidence ? (
         <div className="risk-detail-severity">
@@ -234,8 +244,8 @@ function HazardCard({ assessment, selected, onClick }: HazardCardProps) {
       onClick={onClick}
     >
       <div className="risk-card-heading">
-        <span className="risk-card-icon"><HazardIcon hazard={assessment.hazard} /></span>
         <h2>{hazardLabel(assessment.hazard)}</h2>
+        <span className="risk-card-icon"><HazardImage hazard={assessment.hazard} size={25} /></span>
       </div>
       <div className="risk-card-score-row">
         <strong>{hasEvidence ? assessment.index : '—'}</strong>
@@ -321,14 +331,23 @@ export default function RiskCenterPage() {
 
   return (
     <div className="decision-page content-stack risk-center-page">
+      <div className="risk-topbar">
+        <label className="risk-topbar-search">
+          <Search aria-hidden="true" />
+          <span className="sr-only">Search location or farm</span>
+          <input type="search" placeholder="Search location or farm..." />
+        </label>
+        {selectedAssessment && (
+          <button type="button" className="risk-period-control" aria-label="Assessment period">
+            <CalendarDays aria-hidden="true" />{horizonLabel(selectedAssessment.horizon)}<ChevronDown aria-hidden="true" />
+          </button>
+        )}
+      </div>
       <header className="page-heading decision-heading risk-page-heading">
         <div>
           <h1>Farm Risk Center</h1>
           <p>Understand climate threats before they damage your farm.</p>
         </div>
-        {selectedAssessment && (
-          <span className="risk-period-control"><CalendarDays aria-hidden="true" />{horizonLabel(selectedAssessment.horizon)}</span>
-        )}
       </header>
 
       {loading && (
@@ -366,38 +385,45 @@ export default function RiskCenterPage() {
           </section>
 
           {selectedAssessment && (
-            <div className="risk-map-detail-grid">
-              <section className="risk-map-card workspace-card" aria-labelledby="risk-map-title">
-                <div className="risk-map-heading">
-                  <div><h2 id="risk-map-title">Risk Map</h2><p>See risk areas across your farm.</p></div>
-                  <label className="risk-map-selector">
-                    <span className="sr-only">Select hazard</span>
-                    <select value={selectedHazard ?? ''} onChange={(event) => setSelectedHazard(event.target.value)}>
-                      {assessments.map((assessment) => (
-                        <option key={assessment.hazard} value={assessment.hazard}>{selectorLabel(assessment.hazard)}</option>
-                      ))}
-                    </select>
-                  </label>
+            <section className="risk-overview-shell workspace-card" aria-labelledby="risk-overview-title">
+              <div className="risk-overview-shell-heading">
+                <h2 id="risk-overview-title">Risk Overview</h2>
+                <p>See current and upcoming risks around your farm.</p>
+              </div>
+              <div className="risk-overview-layout">
+                <div className="risk-overview-list" aria-label="Select a hazard">
+                  {assessments.map((assessment) => (
+                    <button
+                      key={assessment.hazard}
+                      type="button"
+                      data-selected={assessment.hazard === selectedHazard || undefined}
+                      onClick={() => setSelectedHazard(assessment.hazard)}
+                    >
+                      <HazardImage hazard={assessment.hazard} size={19} />
+                      <span>{comparisonLabel(assessment.hazard)}</span>
+                      {assessment.level === 'Unknown' ? (
+                        <i className="risk-overview-unknown">Insufficient evidence</i>
+                      ) : (
+                        <i><b data-level={assessment.level.toLowerCase()} style={{ width: `${assessment.index}%` }} /></i>
+                      )}
+                      <strong data-level={assessment.level.toLowerCase()}>{assessment.level}</strong>
+                    </button>
+                  ))}
                 </div>
-                <div className="risk-map-placeholder">
-                  <span className="risk-map-placeholder-icon"><MapPinned aria-hidden="true" /></span>
-                  <strong>Spatial risk layer unavailable</strong>
-                  <p>Spatially resolved hazard evidence is required to show within-farm risk variation.</p>
-                </div>
-              </section>
-              <HazardDetailPanel assessment={selectedAssessment} />
-            </div>
+                <HazardDetailPanel assessment={selectedAssessment} />
+              </div>
+            </section>
           )}
 
-          <section className="risk-comparison-card workspace-card" aria-labelledby="risk-comparison-title">
+          <section className="risk-comparison-card risk-timeline-card workspace-card" aria-labelledby="risk-comparison-title">
             <div className="risk-visual-heading">
-              <div><h2 id="risk-comparison-title">Hazard Comparison</h2><p>Comparison of climate risks for your farm.</p></div>
+              <div><h2 id="risk-comparison-title">Current Hazard Comparison</h2><p>Current severity across supported hazards.</p></div>
               <span>Severity index / 100</span>
             </div>
             <div className="risk-comparison-bars">
               {assessments.map((assessment) => (
                 <button key={assessment.hazard} type="button" onClick={() => setSelectedHazard(assessment.hazard)}>
-                  <span>{hazardLabel(assessment.hazard)}</span>
+                  <span className="risk-comparison-name"><HazardImage hazard={assessment.hazard} size={17} />{comparisonLabel(assessment.hazard)}</span>
                   {assessment.level === 'Unknown' ? (
                     <i className="risk-comparison-unknown">Insufficient evidence</i>
                   ) : (
@@ -428,7 +454,10 @@ export default function RiskCenterPage() {
                 ))}
               </ul>
             ) : (
-              <p className="risk-no-actions">No urgent actions are recommended for the current assessment.</p>
+              <div className="risk-no-actions">
+                <ShieldCheck aria-hidden="true" />
+                <span><strong>No urgent actions recommended</strong>Current conditions do not require immediate intervention.</span>
+              </div>
             )}
           </section>
         </>
