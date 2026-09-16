@@ -1,141 +1,141 @@
 """
-Pydantic schemas for the Risk Center API.
+Risk Center API schemas.
 
-Requirements: 8.5
+Response models for /api/v1/farms/{farm_id}/risks routes.
+
+Requirements: 8.2, 8.3, 8.4, 8.5
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
 
-from pydantic import Field
-
-from app.api.schemas import ReadBaseSchema
+from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
-# Action rule
+# ActionRule response
 # ---------------------------------------------------------------------------
 
 
-class ActionRuleResponse(ReadBaseSchema):
+class ActionRuleResponse(BaseModel):
     """
-    A single reviewed action recommendation attached to a hazard assessment.
+    Resolved action recommendation with completion overlay.
 
-    Requirements: 7.2, 8.5
+    Requirements: 7.2, 8.3
     """
 
-    id: str = Field(description="Rule identifier, e.g. 'drought-irrigate-or-mulch'")
-    priority: int = Field(description="Rule priority; 1 = highest")
-    text: str = Field(description="Recommendation text")
-    source: str = Field(description="Reviewed agronomic source")
-    review_date: str = Field(description="ISO date string when this rule was last reviewed")
-    completed: bool = Field(
-        default=False,
-        description="True when the farmer has marked this action as complete",
-    )
+    id: str = Field(description="Unique action identifier")
+    priority: int = Field(description="Priority level (lower number = higher priority)")
+    text: str = Field(description="Action recommendation text")
+    source: str = Field(description="Advisory source (e.g., KALRO, FAO)")
+    review_date: str = Field(description="Date this recommendation was last reviewed (YYYY-MM-DD)")
+    completed: bool = Field(description="True when this action has been marked complete for this farm")
     completed_at: datetime | None = Field(
-        default=None,
-        description="UTC timestamp when the action was first marked complete, or null",
+        description="UTC timestamp when the action was marked complete (null if not completed)"
     )
 
 
 # ---------------------------------------------------------------------------
-# Hazard assessment
+# HazardAssessment response
 # ---------------------------------------------------------------------------
 
 
-class HazardAssessmentResponse(ReadBaseSchema):
+class HazardAssessmentResponse(BaseModel):
     """
-    Assessment for a single hazard type.
+    Single hazard risk assessment with resolved actions.
 
-    Requirements: 1.3, 1.4, 1.5, 8.2, 8.5
+    Requirements: 1.4, 1.5, 8.2
     """
 
-    hazard: str = Field(
-        description="Hazard type: drought | heat | heavy_rainfall | flood_exposure | wind"
-    )
-    index: int = Field(description="Hazard intensity index (0–100)", ge=0, le=100)
-    level: Literal["Low", "Medium", "High", "Unknown"] = Field(
-        description="Qualitative hazard level"
-    )
-    driver: str = Field(description="Primary evidence driver name")
-    explanation: str = Field(description="Plain-language explanation of the hazard level")
-    horizon: str = Field(
-        description="Assessment time horizon: current | short_term | seasonal"
-    )
-    at_risk_crops: list[str] = Field(
-        description="Crops near heat tolerance ceiling (heat hazard only; empty otherwise)"
-    )
-    actions: list[ActionRuleResponse] = Field(
-        description="Resolved action recommendations (non-empty for Medium/High levels)"
-    )
+    hazard: str = Field(description="Hazard type: drought | heat | heavy_rainfall | flood_exposure | wind")
+    index: int = Field(ge=0, le=100, description="Risk severity index (0=lowest, 100=highest)")
+    level: str = Field(description="Risk level: Low | Medium | High | Unknown")
+    driver: str = Field(description="Primary driver name (e.g., rainfall_deficit, temperature)")
+    explanation: str = Field(description="Plain-language explanation of the assessment")
+    horizon: str = Field(description="Assessment horizon: current | short_term | seasonal")
+    at_risk_crops: list[str] = Field(description="List of crop names at risk (heat assessments only)")
+    actions: list[ActionRuleResponse] = Field(description="Resolved action recommendations for this hazard")
     evidence_used: dict[str, str] = Field(
-        description="Per-field evidence status: 'real' | 'demonstration' | 'missing'"
+        description="Mapping of evidence field → status (real | demonstration | missing)"
     )
-    engine_version: str = Field(description="Engine identifier, e.g. 'farmtwin-risk-v1'")
-    snapshot_id: str | None = Field(
-        description="Snapshot UUID used as evidence basis, or null for demonstration fallback"
-    )
-    data_mode: str = Field(
-        description="Evidence mode: 'live' | 'historical_replay' | 'demonstration'"
-    )
+    engine_version: str = Field(description="Risk engine version identifier")
+    snapshot_id: str | None = Field(description="Snapshot ID when source=snapshot, else null")
+    data_mode: str = Field(description="Data mode: live | historical_replay | demonstration")
 
 
 # ---------------------------------------------------------------------------
-# Risk response
+# RiskResponse
 # ---------------------------------------------------------------------------
 
 
-class RiskResponse(ReadBaseSchema):
+class RiskResponse(BaseModel):
     """
-    Aggregated risk response with all 5 hazard assessments.
+    Complete risk assessment response with all 5 hazard assessments.
 
-    Requirements: 1.3, 8.2, 8.5
+    Requirements: 1.3, 8.2
     """
 
     farm_id: str = Field(description="Farm UUID")
     assessments: list[HazardAssessmentResponse] = Field(
-        description="Five hazard assessments (Drought, Heat, Heavy Rainfall, Flood Exposure, Wind)"
+        description="Exactly 5 hazard assessments (drought, heat, heavy_rainfall, flood_exposure, wind)"
     )
-    engine_version: str = Field(description="Engine identifier")
-    snapshot_id: str | None = Field(
-        description="Snapshot UUID when real data is used, or null for demonstration fallback"
-    )
-    data_mode: str = Field(
-        description="Evidence mode for the overall assessment"
-    )
+    engine_version: str = Field(description="Risk engine version identifier")
+    snapshot_id: str | None = Field(description="Snapshot ID when available, else null")
+    data_mode: str = Field(description="Data mode: live | historical_replay | demonstration")
 
 
 # ---------------------------------------------------------------------------
-# Action completion
+# ActionCompletion response
 # ---------------------------------------------------------------------------
 
 
-class ActionCompletionRequest(ReadBaseSchema):
+class ActionCompletionResponse(BaseModel):
     """
-    Request body for PATCH /api/v1/farms/{farm_id}/actions/{action_id}.
+    Action completion record response.
 
-    Currently no body fields are required — the action_id comes from the path.
-    Kept for forward compatibility.
-
-    Requirements: 7.4
-    """
-
-    pass
-
-
-class ActionCompletionResponse(ReadBaseSchema):
-    """
-    Response from marking an action as complete.
-
-    Requirements: 7.4, 7.5
+    Requirements: 7.4, 7.5, 8.5
     """
 
     farm_id: str = Field(description="Farm UUID")
-    action_id: str = Field(description="Action rule identifier")
-    completed: bool = Field(description="Always True when returned from a PATCH")
-    completed_at: datetime = Field(
-        description="UTC timestamp when the action was first marked complete"
+    action_id: str = Field(description="Action recommendation ID")
+    completed: bool = Field(description="Always true in this response")
+    completed_at: datetime = Field(description="UTC timestamp when the action was marked complete")
+
+
+# ---------------------------------------------------------------------------
+# Timeline schemas
+# ---------------------------------------------------------------------------
+
+
+class TimelineHazardAssessment(BaseModel):
+    """Single hazard assessment for a specific forecast date."""
+    
+    index: int | None = Field(
+        ge=0, 
+        le=100, 
+        description="Risk severity index 0-100, or null if unavailable"
     )
+    level: str = Field(description="Low | Medium | High | Unknown")
+
+
+class RiskTimelinePoint(BaseModel):
+    """Risk assessments for all hazards on a specific forecast date."""
+    
+    date: str = Field(description="Forecast date in YYYY-MM-DD format")
+    drought: TimelineHazardAssessment
+    heat: TimelineHazardAssessment
+    heavy_rainfall: TimelineHazardAssessment
+    flood_exposure: TimelineHazardAssessment
+    wind: TimelineHazardAssessment
+
+
+class RiskTimelineResponse(BaseModel):
+    """7-day risk timeline with daily hazard assessments."""
+    
+    farm_id: str
+    snapshot_id: str | None
+    horizon_days: int = Field(description="Number of forecast days returned")
+    generated_at: datetime = Field(description="Timeline generation timestamp (UTC)")
+    points: list[RiskTimelinePoint] = Field(description="Daily risk assessments, ordered by date")
+

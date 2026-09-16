@@ -42,6 +42,30 @@ export interface ActionCompletionResponse {
   completed_at: string;
 }
 
+// --- Timeline types ---
+
+export interface TimelineHazard {
+  index: number | null;
+  level: 'Low' | 'Medium' | 'High' | 'Unknown';
+}
+
+export interface RiskTimelinePoint {
+  date: string;
+  drought: TimelineHazard;
+  heat: TimelineHazard;
+  heavy_rainfall: TimelineHazard;
+  flood_exposure: TimelineHazard;
+  wind: TimelineHazard;
+}
+
+export interface RiskTimelineResponse {
+  farm_id: string;
+  snapshot_id: string | null;
+  horizon_days: number;
+  generated_at: string;
+  points: RiskTimelinePoint[];
+}
+
 // --- Error class ---
 
 export class RiskApiError extends Error {
@@ -87,6 +111,23 @@ export async function completeAction(
       await requestApi<ActionCompletionResponse>(
         `/api/v1/farms/${encodeURIComponent(farmId)}/actions/${encodeURIComponent(actionId)}`,
         { method: 'PATCH' },
+      )
+    ).data;
+  } catch (error) {
+    return mapRiskError(error);
+  }
+}
+
+export async function getFarmRiskTimeline(
+  farmId: string,
+  days: number = 7,
+  signal?: AbortSignal,
+): Promise<RiskTimelineResponse> {
+  try {
+    return (
+      await requestApi<RiskTimelineResponse>(
+        `/api/v1/farms/${encodeURIComponent(farmId)}/risks/timeline?days=${days}`,
+        { signal },
       )
     ).data;
   } catch (error) {

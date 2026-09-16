@@ -14,7 +14,7 @@ Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
@@ -31,8 +31,12 @@ from app.api.v1.risk_schemas import (
     ActionRuleResponse,
     HazardAssessmentResponse,
     RiskResponse,
+    RiskTimelineResponse,
+    RiskTimelinePoint,
+    TimelineHazardAssessment,
 )
 from app.core.config import Settings
+from app.core.exceptions import FarmValidationError
 from app.core.security import Principal
 from app.domain.risk_engine import HazardAssessment, RiskResponse as DomainRiskResponse
 from app.domain.risk_rules import ActionRule
@@ -226,4 +230,75 @@ async def complete_farm_action(
         action_id=completion.action_id,
         completed=True,
         completed_at=_normalize_dt(completion.completed_at),
+    )
+
+
+@router.get(
+    "/farms/{farm_id}/risks/timeline",
+    response_model=RiskTimelineResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {"model": ErrorResponse, "description": "Unauthenticated"},
+        404: {
+            "model": ErrorResponse,
+            "description": "Farm not found, owned by different user, or no snapshot available",
+        },
+        422: {
+            "model": ErrorResponse,
+            "description": "Invalid days parameter",
+        },
+    },
+    summary="Get 7-day risk timeline for a farm",
+    description=(
+        "Returns daily hazard severity assessments for the next 7 days based on "
+        "weather forecast data. Uses the same risk engine thresholds as the current "
+        "risk assessment endpoint for consistency."
+    ),
+)
+async def get_farm_risk_timeline(
+    farm_id: UUID,
+    days: int = 7,
+    principal: Principal = Depends(get_current_principal),
+    session: AsyncSession = Depends(get_request_session),
+    settings: Settings = Depends(get_app_settings),
+) -> RiskTimelineResponse:
+    """
+    GET /api/v1/farms/{farm_id}/risks/timeline?days=7
+
+    Returns timeline of daily risk assessments from forecast data.
+    """
+    if days < 1 or days > 7:
+        raise FarmValidationError(
+            field="query.days",
+            detail_code="INVALID_VALUE",
+            message="days parameter must be between 1 and 7",
+        )
+
+    points, snapshot_id = await risk_service.get_risk_timeline(
+        session=session,
+        principal=principal,
+        farm_id=farm_id,
+        days=days,
+        settings=settings,
+    )
+
+    # Convert domain timeline points to API schema
+    api_points = [
+        RiskTimelinePoint(
+            date=p.date,
+            drought=TimelineHazardAssessment(index=p.drought.index, level=p.drought.level),
+            heat=TimelineHazardAssessment(index=p.heat.index, level=p.heat.level),
+            heavy_rainfall=TimelineHazardAssessment(index=p.heavy_rainfall.index, level=p.heavy_rainfall.level),
+            flood_exposure=TimelineHazardAssessment(index=p.flood_exposure.index, level=p.flood_exposure.level),
+            wind=TimelineHazardAssessment(index=p.wind.index, level=p.wind.level),
+        )
+        for p in points
+    ]
+
+    return RiskTimelineResponse(
+        farm_id=str(farm_id),
+        snapshot_id=snapshot_id,
+        horizon_days=len(api_points),
+        generated_at=_normalize_dt(datetime.now(timezone.utc)),
+        points=api_points,
     )

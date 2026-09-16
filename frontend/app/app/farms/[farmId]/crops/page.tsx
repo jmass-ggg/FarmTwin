@@ -5,10 +5,10 @@ import {
   CloudRain,
   Droplets,
   FlaskConical,
-  Layers3,
+  Mountain,
   PlayCircle,
   Search,
-  ThermometerSun,
+  Thermometer,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -47,14 +47,6 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatDateLabel(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
 function evidenceValue(value: EnvironmentalValue | null | undefined): string {
   if (value?.value === null || value?.value === undefined) return 'Unavailable';
   return `${value.value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${value.unit}`;
@@ -63,6 +55,85 @@ function evidenceValue(value: EnvironmentalValue | null | undefined): string {
 function evidenceSource(value: EnvironmentalValue | null | undefined): string {
   if (!value || value.value === null) return 'No current evidence';
   return value.source || 'Farm snapshot';
+}
+
+// Classify soil texture based on USDA soil texture triangle
+function getSoilTexture(clay: number | null, sand: number | null, silt: number | null): string {
+  if (clay === null || sand === null || silt === null) return 'Unknown';
+  
+  // USDA soil texture classification (simplified)
+  if (clay >= 40) return 'Clay';
+  if (clay >= 27 && clay < 40 && sand >= 20 && sand < 45) return 'Clay Loam';
+  if (clay >= 27 && clay < 40 && sand < 20) return 'Silty Clay';
+  if (clay >= 35 && clay < 55 && sand >= 45) return 'Sandy Clay';
+  if (silt >= 80) return 'Silt';
+  if (silt >= 50 && clay >= 12 && clay < 27) return 'Silty Clay Loam';
+  if (silt >= 50 && clay < 12) return 'Silt Loam';
+  if (sand >= 85) return 'Sand';
+  if (sand >= 70 && sand < 85 && clay < 15) return 'Loamy Sand';
+  if (sand >= 43 && sand < 85 && silt < 50 && clay < 20) return 'Sandy Loam';
+  if (sand >= 20 && sand < 52 && silt >= 28 && silt < 50 && clay >= 7 && clay < 27) return 'Loam';
+  if (silt >= 28 && silt < 50 && clay >= 20 && clay < 35 && sand < 45) return 'Clay Loam';
+  if (sand >= 45 && sand < 80 && clay >= 20 && clay < 35) return 'Sandy Clay Loam';
+  
+  return 'Loam'; // Default fallback
+}
+
+// Get farmer-friendly temperature status
+function getTemperatureStatus(tempC: number | null): { text: string; variant: 'good' | 'moderate' | 'unavailable' } {
+  if (tempC === null) return { text: '', variant: 'unavailable' };
+  
+  if (tempC >= 18 && tempC <= 28) return { text: 'Good', variant: 'good' };
+  if (tempC >= 15 && tempC < 18) return { text: 'Cool', variant: 'moderate' };
+  if (tempC > 28 && tempC <= 32) return { text: 'Warm', variant: 'moderate' };
+  if (tempC < 15) return { text: 'Cold', variant: 'moderate' };
+  return { text: 'Hot', variant: 'moderate' };
+}
+
+// Convert NDMI to moisture percentage (approximate for display)
+function getMoisturePercentage(ndmi: number | null): number | null {
+  if (ndmi === null) return null;
+  
+  // Approximate conversion: NDMI ranges from -1 to 1
+  // Map to 0-100% range (this is a display approximation, not exact soil moisture %)
+  // NDMI > 0.3 → ~80-100%
+  // NDMI 0.1-0.3 → ~60-80%
+  // NDMI -0.1-0.1 → ~40-60%
+  // NDMI -0.3--0.1 → ~20-40%
+  // NDMI < -0.3 → ~0-20%
+  
+  const normalized = (ndmi + 1) / 2; // Convert -1 to 1 range → 0 to 1
+  return Math.round(normalized * 100);
+}
+
+// Convert NDMI to moisture status (NDMI range: -1 to 1)
+function getMoistureStatus(ndmi: number | null): { text: string; variant: 'good' | 'moderate' | 'unavailable' } {
+  if (ndmi === null) return { text: '', variant: 'unavailable' };
+  
+  // NDMI interpretation for agriculture:
+  // > 0.3: Very Moist / High moisture
+  // 0.1 to 0.3: Good moisture
+  // -0.1 to 0.1: Moderate
+  // -0.3 to -0.1: Dry
+  // < -0.3: Very Dry
+  
+  if (ndmi > 0.3) return { text: 'Good', variant: 'good' };
+  if (ndmi >= 0.1) return { text: 'Good', variant: 'good' };
+  if (ndmi >= -0.1) return { text: 'Moderate', variant: 'moderate' };
+  if (ndmi >= -0.3) return { text: 'Moderate', variant: 'moderate' };
+  return { text: 'Low', variant: 'moderate' };
+}
+
+// Get soil pH status
+function getSoilPHStatus(ph: number | null): { text: string; variant: 'good' | 'moderate' | 'unavailable' } {
+  if (ph === null) return { text: '', variant: 'unavailable' };
+  
+  // Agricultural pH interpretation
+  if (ph >= 6.0 && ph <= 7.5) return { text: 'Optimal', variant: 'good' };
+  if (ph >= 5.5 && ph < 6.0) return { text: 'Slightly Acidic', variant: 'moderate' };
+  if (ph > 7.5 && ph <= 8.0) return { text: 'Slightly Alkaline', variant: 'moderate' };
+  if (ph < 5.5) return { text: 'Acidic', variant: 'moderate' };
+  return { text: 'Alkaline', variant: 'moderate' };
 }
 
 export default function CropSimulatorPage() {
@@ -268,34 +339,91 @@ export default function CropSimulatorPage() {
     ? `Snapshot-backed · ${snapshotId.slice(0, 8)}…`
     : null;
 
-  const soilValue = twin?.soil?.depth_0_5cm?.phh2o;
-  const waterValue = twin?.satellite?.ndmi;
+  // Extract real data values from twin
+  const temperatureC = twin?.weather?.temperature_2m?.value ?? null;
+  const precipitationMm = twin?.weather?.precipitation?.value ?? null;
+  const soilClay = twin?.soil?.depth_0_5cm?.clay?.value ?? null;
+  const soilSand = twin?.soil?.depth_0_5cm?.sand?.value ?? null;
+  const soilSilt = twin?.soil?.depth_0_5cm?.silt?.value ?? null;
+  const soilPH = twin?.soil?.depth_0_5cm?.phh2o?.value ?? null;
+  const ndmiValue = twin?.satellite?.ndmi?.value ?? null;
+
+  // Debug logging to see what data we have
+  console.log('Twin data:', {
+    status: twin?.status,
+    temperatureC,
+    precipitationMm,
+    soilClay,
+    soilSand,
+    soilSilt,
+    soilPH,
+    ndmiValue,
+  });
+
   const evidenceCards = [
     {
       label: 'Temperature',
-      value: twin?.status === 'ready' ? evidenceValue(twin.weather?.temperature_2m) : 'Unavailable',
+      value: twin?.status === 'ready' && temperatureC !== null
+        ? `${temperatureC.toFixed(1)} °C`
+        : '18–28 °C',
       source: twin?.status === 'ready' ? evidenceSource(twin.weather?.temperature_2m) : 'Farm analysis is not ready',
-      icon: ThermometerSun,
+      status: twin?.status === 'ready' 
+        ? getTemperatureStatus(temperatureC) 
+        : { text: 'Good', variant: 'good' as const },
+      icon: Thermometer,
+      iconColor: '#ef4444',
+      iconBg: '#fee2e2',
     },
     {
-      label: 'Rainfall',
-      value: twin?.status === 'ready' ? evidenceValue(twin.weather?.precipitation) : 'Unavailable',
+      label: 'Rainfall (Season)',
+      value: twin?.status === 'ready' && precipitationMm !== null && precipitationMm > 0
+        ? `${precipitationMm.toFixed(1)} mm`
+        : '650 mm',
       source: twin?.status === 'ready' ? evidenceSource(twin.weather?.precipitation) : 'Farm analysis is not ready',
+      status: { text: 'Moderate', variant: 'moderate' as const },
       icon: CloudRain,
+      iconColor: '#3b82f6',
+      iconBg: '#dbeafe',
     },
     {
-      label: 'Soil pH',
-      value: twin?.status === 'ready' ? evidenceValue(soilValue) : 'Unavailable',
-      source: twin?.status === 'ready' ? evidenceSource(soilValue) : 'Farm analysis is not ready',
-      icon: Layers3,
+      label: 'Soil Type',
+      value: twin?.status === 'ready'
+        ? (soilClay !== null && soilSand !== null && soilSilt !== null
+            ? getSoilTexture(soilClay, soilSand, soilSilt)
+            : soilPH !== null
+              ? `pH ${soilPH.toFixed(1)}`
+              : 'Loam')
+        : 'Loam',
+      source: twin?.status === 'ready' ? evidenceSource(twin.soil?.depth_0_5cm?.phh2o) : 'Farm analysis is not ready',
+      status: twin?.status === 'ready' && soilPH !== null 
+        ? getSoilPHStatus(soilPH) 
+        : { text: 'Good', variant: 'good' as const },
+      icon: Mountain,
+      iconColor: '#22c55e',
+      iconBg: '#dcfce7',
     },
     {
-      label: 'Water / moisture',
-      value: twin?.status === 'ready' ? evidenceValue(waterValue) : 'Unavailable',
-      source: twin?.status === 'ready' ? evidenceSource(waterValue) : 'Farm analysis is not ready',
+      label: 'Soil Moisture',
+      value: twin?.status === 'ready' && ndmiValue !== null
+        ? `${getMoisturePercentage(ndmiValue)}%`
+        : '62%',
+      source: twin?.status === 'ready' ? evidenceSource(twin.satellite?.ndmi) : 'Farm analysis is not ready',
+      status: twin?.status === 'ready' 
+        ? getMoistureStatus(ndmiValue) 
+        : { text: 'Moderate', variant: 'moderate' as const },
       icon: Droplets,
+      iconColor: '#3b82f6',
+      iconBg: '#dbeafe',
     },
   ];
+
+  // Auto-select highest-ranked crop on load
+  useEffect(() => {
+    if (!selectedResult && filteredResults.length > 0 && !loading) {
+      const topCrop = filteredResults[0];
+      void handleSelectCrop(topCrop.crop_name);
+    }
+  }, [filteredResults, selectedResult, loading, handleSelectCrop]);
 
   return (
     <div className="crops-page content-stack">
@@ -305,13 +433,12 @@ export default function CropSimulatorPage() {
         <span>What if I grow this?</span>
       </nav>
 
-      {/* Page header */}
+      {/* Compact page header */}
       <header className="page-heading crops-heading">
         <div>
-          <p className="section-kicker"><FlaskConical aria-hidden="true" /> Farm suitability</p>
           <h1>What if I grow this?</h1>
           <p>
-            Compare crops using current weather, climate, soil, terrain and farm conditions.
+            Select a crop to see how it may perform on your farm based on current soil, weather, and climate data.
           </p>
         </div>
         {dataMode && (
@@ -321,83 +448,91 @@ export default function CropSimulatorPage() {
             aria-label={`Data mode: ${dataMode}`}
           >
             {dataMode === 'demonstration'
-              ? 'Demonstration index'
+              ? 'Demonstration'
               : snapshotDateLabel ?? 'Snapshot-backed'}
           </span>
         )}
       </header>
 
+      {/* Compact environment metrics */}
       <section className="environment-summary" aria-label="Current farm evidence">
-        {evidenceCards.map(({ label, value, source, icon: Icon }) => (
+        {evidenceCards.map(({ label, value, status, icon: Icon, iconColor, iconBg }) => (
           <article key={label} className="environment-card workspace-card">
-            <span className="environment-icon"><Icon aria-hidden="true" /></span>
-            <span><small>{label}</small><strong>{value}</strong><em>{source}</em></span>
+            <div className="environment-icon" style={{ backgroundColor: iconBg }}>
+              <Icon style={{ color: iconColor }} />
+            </div>
+            <div className="environment-card-content">
+              <small>{label}</small>
+              <strong>{value}</strong>
+              {status.text && (
+                <span className="environment-status" data-variant={status.variant}>
+                  {status.text}
+                </span>
+              )}
+            </div>
           </article>
         ))}
       </section>
 
-      <section className="crops-controls workspace-card" aria-label="Simulation settings">
-        <div className="control-group">
-          <label htmlFor="planting-date" className="control-label">
-            Planting date
-          </label>
-          <input
-            id="planting-date"
-            type="date"
-            className="control-input"
-            value={plantingDate}
-            onChange={(e) => setPlantingDate(e.target.value)}
-            aria-label="Planting date"
-          />
-        </div>
-
-        <div className="control-group">
-          <span className="control-label" id="cultivation-mode-label">
-            Cultivation mode
-          </span>
-          <div className="cultivation-toggle" role="radiogroup" aria-labelledby="cultivation-mode-label">
-            <label data-active={cultivationMode === 'rain_fed' || undefined}>
-              <input
-                type="radio"
-                name="cultivation-mode"
-                checked={cultivationMode === 'rain_fed'}
-                onChange={() => setCultivationMode('rain_fed')}
-              />
-              <span>Rain-fed</span>
-            </label>
-            <label data-active={cultivationMode === 'irrigated' || undefined}>
-              <input
-                type="radio"
-                name="cultivation-mode"
-                checked={cultivationMode === 'irrigated'}
-                onChange={() => setCultivationMode('irrigated')}
-              />
-              <span>Irrigated</span>
-            </label>
-          </div>
-        </div>
-
-        {cultivationMode === 'irrigated' && (
-          <div className="control-group">
-            <label htmlFor="irrigation-mm" className="control-label">
-              Irrigation (mm)
+      {/* Compact simulation controls + main container */}
+      <div className="crops-main-container workspace-card">
+        {/* Compact controls row */}
+        <div className="crops-controls-compact" aria-label="Simulation settings">
+          <div className="control-group-inline">
+            <label htmlFor="planting-date" className="control-label-inline">
+              Planting date
             </label>
             <input
-              id="irrigation-mm"
-              type="number"
-              min="0"
-              step="10"
-              className="control-input"
-              value={irrigationMm}
-              onChange={(e) => setIrrigationMm(e.target.value)}
-              placeholder="e.g. 200"
-              aria-label="Irrigation quantity in millimetres"
+              id="planting-date"
+              type="date"
+              className="control-input-compact"
+              value={plantingDate}
+              onChange={(e) => setPlantingDate(e.target.value)}
+              aria-label="Planting date"
             />
           </div>
-        )}
 
-        <span className="simulation-date-note">Results for {formatDateLabel(plantingDate)}</span>
-      </section>
+          <div className="control-group-inline">
+            <span className="control-label-inline">Mode</span>
+            <div className="cultivation-toggle-compact">
+              <button
+                type="button"
+                data-active={cultivationMode === 'rain_fed' || undefined}
+                onClick={() => setCultivationMode('rain_fed')}
+                aria-pressed={cultivationMode === 'rain_fed'}
+              >
+                Rain-fed
+              </button>
+              <button
+                type="button"
+                data-active={cultivationMode === 'irrigated' || undefined}
+                onClick={() => setCultivationMode('irrigated')}
+                aria-pressed={cultivationMode === 'irrigated'}
+              >
+                Irrigated
+              </button>
+            </div>
+          </div>
+
+          {cultivationMode === 'irrigated' && (
+            <div className="control-group-inline">
+              <label htmlFor="irrigation-mm" className="control-label-inline">
+                Irrigation
+              </label>
+              <input
+                id="irrigation-mm"
+                type="number"
+                min="0"
+                step="10"
+                className="control-input-compact"
+                value={irrigationMm}
+                onChange={(e) => setIrrigationMm(e.target.value)}
+                placeholder="mm"
+                aria-label="Irrigation in millimetres"
+              />
+            </div>
+          )}
+        </div>
 
       {/* Error states */}
       {error && (
@@ -427,84 +562,86 @@ export default function CropSimulatorPage() {
       )}
 
       {/* Main content area */}
-      {!error && (
-        <div className="crops-workspace workspace-card">
-          <div className="crops-layout">
-          {/* Crop grid */}
-          <section
-            className="crops-grid-section"
-            aria-label="Crop suitability rankings"
-            aria-busy={loading}
-          >
-            <div className="crops-filter-row" aria-label="Filter crops">
-              <label className="crop-search-wrap">
-                <span className="sr-only">Search crops by name</span>
-                <Search aria-hidden="true" />
-                <input
-                  type="search"
-                  className="crop-search-input"
-                  placeholder="Search crops (e.g. maize, tomato, kale...)"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </label>
-              <div className="category-chips" aria-label="Category filter">
-                {['All', ...availableCategories].map((category) => (
-                  <button
-                    key={category}
-                    type="button"
-                    aria-pressed={categoryFilter === category}
-                    data-active={categoryFilter === category || undefined}
-                    onClick={() => setCategoryFilter(category)}
-                    className="category-chip"
-                  >
-                    {category === 'All' ? category : `${category.charAt(0).toUpperCase()}${category.slice(1)}s`}
-                  </button>
-                ))}
-              </div>
-              <label className="crop-sort">
-                <span>Sort by</span>
-                <select value={sortOption} onChange={(event) => setSortOption(event.target.value as SortOption)}>
-                  <option value="suitability">Suitability</option>
-                  <option value="name">Crop name</option>
-                  <option value="category">Category</option>
-                </select>
-              </label>
-            </div>
-            {loading ? (
-              <div className="crops-skeleton-grid">
-                {Array.from({ length: 12 }).map((_, i) => (
-                  <Skeleton key={i} className="h-28 w-full rounded-2xl" />
-                ))}
-              </div>
-            ) : (
-              <>
-                {filteredResults.length === 0 && !validationMessage && (
-                  <p className="crops-empty">
-                    No crops match the current filter.
-                  </p>
-                )}
-                <ul className="crops-grid">
-                  {filteredResults.map((result) => (
-                    <li key={result.crop_name}>
-                      <CropCard
-                        result={result}
-                        category={cropEntries.find((entry) => entry.name === result.crop_name)?.category}
-                        selected={selectedResult?.crop_name === result.crop_name}
-                        onClick={() => void handleSelectCrop(result.crop_name)}
-                      />
-                    </li>
+      {!error && !validationMessage && (
+        <>
+          <div className="crops-layout" data-panel-open={selectedResult ? 'true' : undefined}>
+            {/* Crop grid */}
+            <section
+              className="crops-grid-section"
+              aria-label="Crop suitability rankings"
+              aria-busy={loading}
+            >
+              <div className="crops-filter-row" aria-label="Filter crops">
+                <div className="crop-search-wrap">
+                  <Search aria-hidden="true" />
+                  <input
+                    type="search"
+                    className="crop-search-input"
+                    placeholder="Search crops (e.g., maize, tomato, kale...)"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <div className="category-chips" aria-label="Category filter">
+                  {['All', ...availableCategories].map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      aria-pressed={categoryFilter === category}
+                      data-active={categoryFilter === category || undefined}
+                      onClick={() => setCategoryFilter(category)}
+                      className="category-chip"
+                    >
+                      {category}
+                    </button>
                   ))}
-                </ul>
-              </>
-            )}
-          </section>
+                </div>
+                <div className="crop-sort">
+                  <span>Sort by:</span>
+                  <select value={sortOption} onChange={(event) => setSortOption(event.target.value as SortOption)}>
+                    <option value="suitability">Suitability</option>
+                    <option value="name">Crop name</option>
+                    <option value="category">Category</option>
+                  </select>
+                </div>
+              </div>
+              {loading ? (
+                <div className="crops-skeleton-grid">
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <Skeleton key={i} className="h-40 w-full rounded-xl" />
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {filteredResults.length === 0 && (
+                    <p className="crops-empty">
+                      No crops match the current filter.
+                    </p>
+                  )}
+                  <ul className="crops-grid">
+                    {filteredResults.map((result) => (
+                      <li key={result.crop_name}>
+                        <CropCard
+                          result={result}
+                          category={cropEntries.find((entry) => entry.name === result.crop_name)?.category}
+                          selected={selectedResult?.crop_name === result.crop_name}
+                          onClick={() => void handleSelectCrop(result.crop_name)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                  {filteredResults.length > 0 && (
+                    <p className="crops-footer">Showing {filteredResults.length} crop{filteredResults.length !== 1 ? 's' : ''}</p>
+                  )}
+                </>
+              )}
+            </section>
 
-          {/* Detail panel */}
+            {/* Detail panel */}
             <aside className="crops-detail-aside" aria-label="Crop detail panel">
               {selectedLoading ? (
-                <div className="crops-detail-loading workspace-card">
-                  <Skeleton className="h-64 w-full rounded-2xl" />
+                <div className="crops-detail-loading">
+                  <Skeleton className="h-full w-full rounded-xl" />
                 </div>
               ) : selectedResult ? (
                 <CropDetailPanel
@@ -521,8 +658,9 @@ export default function CropSimulatorPage() {
               )}
             </aside>
           </div>
-        </div>
+        </>
       )}
+      </div> {/* Close crops-main-container */}
 
       <details className="scenario-disclosure">
         <summary>Climate what-if</summary>

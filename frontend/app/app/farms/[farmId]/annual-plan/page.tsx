@@ -593,108 +593,147 @@ export default function AnnualPlanPage() {
           </details>
 
           <div className="annual-plan-workspace">
-          <section className="annual-months" aria-labelledby="year-title">
-            <div className="section-heading-row">
-              <div>
-                <p className="section-kicker">Twelve planting periods</p>
-                <h2 id="year-title">What fits, and when?</h2>
+            {/* Left panel: 12-month grid (70-75%) */}
+            <section className="annual-months-grid" aria-labelledby="year-title">
+              <div className="section-heading-row">
+                <div>
+                  <p className="section-kicker">Twelve planting periods</p>
+                  <h2 id="year-title">What fits, and when?</h2>
+                </div>
+                <p>Select a month for detailed guidance.</p>
               </div>
-              <p>Select a month for the full explanation.</p>
-            </div>
-            <div className="month-grid">
-              {plan.data.months.map((item) => (
-                <button
-                  key={item.month}
-                  type="button"
-                  data-active={item.month_number === month || undefined}
-                  onClick={() => setMonth(item.month_number)}
-                >
-                  <span className="month-grid-label-row">
-                    {item.month.slice(0, 3)}
-                    {savedMonths.has(item.month_number) && (
-                      <span className="saved-badge" aria-label="Saved entry">
-                        <CheckCircle aria-hidden="true" /> Saved
-                      </span>
-                    )}
-                  </span>
-                  {item.recommendations[0] ? (
-                    <>
-                      <CropVisual cropName={item.recommendations[0].crop} />
-                      <strong className="month-crop-name">{item.recommendations[0].crop}</strong>
-                      <small className="month-status-pill">{item.recommendations[0].label}</small>
-                    </>
-                  ) : (
-                    <>
-                      <CropVisual cropName="" />
-                      <strong className="month-crop-name">No recommendation</strong>
-                    </>
-                  )}
-                </button>
-              ))}
-            </div>
-          </section>
+              <div className="planner-month-grid">
+                {plan.data.months.map((item) => {
+                  const recommendation = item.recommendations[0];
+                  const suitabilityScore = recommendation?.score ?? 0;
+                  const suitabilityLabel = recommendation?.label ?? 'Off Season';
+                  
+                  // Color-coded suitability badges
+                  const badgeVariant =
+                    suitabilityScore >= 82
+                      ? 'excellent'
+                      : suitabilityScore >= 68
+                        ? 'good'
+                        : suitabilityScore >= 50
+                          ? 'moderate'
+                          : suitabilityScore > 0
+                            ? 'low'
+                            : 'off-season';
 
-          <section
-            className="workspace-card month-detail"
-            aria-labelledby="month-detail-title"
-          >
-            <div className="month-detail-hero">
-              <div className="month-detail-visual">
-                <CropVisual cropName={selectedRecommendation?.crop ?? ''} />
+                  return (
+                    <button
+                      key={item.month}
+                      type="button"
+                      className="planner-month-card workspace-card"
+                      data-active={item.month_number === month || undefined}
+                      data-saved={savedMonths.has(item.month_number) || undefined}
+                      onClick={() => setMonth(item.month_number)}
+                      aria-pressed={item.month_number === month}
+                      aria-label={`${item.month}: ${recommendation?.crop ?? 'No recommendation'}`}
+                    >
+                      <div className="planner-month-header">
+                        <span className="planner-month-name">{item.month.slice(0, 3)}</span>
+                        {savedMonths.has(item.month_number) && (
+                          <span className="planner-saved-indicator" aria-label="Saved">
+                            <CheckCircle />
+                          </span>
+                        )}
+                      </div>
+                      <div className="planner-month-visual">
+                        <CropVisual cropName={recommendation?.crop ?? ''} />
+                      </div>
+                      <div className="planner-month-info">
+                        <strong className="planner-crop-name">
+                          {recommendation?.crop ?? 'Off season'}
+                        </strong>
+                        <span
+                          className="planner-suitability-badge"
+                          data-variant={badgeVariant}
+                        >
+                          {suitabilityLabel}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              <div>
-                <p className="month-detail-month">{plan.data.selected_month.month}</p>
-                <span>Recommended crop</span>
-                <h2 id="month-detail-title">
-                  {selectedRecommendation?.crop ?? 'No recommendation'}
-                </h2>
-                {selectedRecommendation && (
-                  <strong className="month-detail-score">
-                    {selectedRecommendation.score}% · {selectedRecommendation.label}
-                  </strong>
-                )}
+            </section>
+
+            {/* Right panel: Selected month detail (25-30%) */}
+            <aside
+              className="workspace-card planner-month-detail"
+              aria-labelledby="month-detail-title"
+            >
+              {/* Hero section */}
+              <div className="planner-detail-hero">
+                <div className="planner-detail-visual-large">
+                  <CropVisual cropName={selectedRecommendation?.crop ?? ''} />
+                </div>
+                <div className="planner-detail-header">
+                  <p className="planner-detail-month-label">
+                    {plan.data.selected_month.month}
+                  </p>
+                  <h2 id="month-detail-title" className="planner-detail-crop-title">
+                    {selectedRecommendation?.crop ?? 'No recommendation'}
+                  </h2>
+                  {selectedRecommendation && (
+                    <div className="planner-detail-score">
+                      <span className="planner-score-value">
+                        {selectedRecommendation.score}%
+                      </span>
+                      <span className="planner-score-label">
+                        {selectedRecommendation.label}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="climate-metrics">
-              <div>
-                <ThermometerSun />
-                <span>
-                  <small>Expected temperature</small>
-                  <strong>
-                    {plan.data.selected_month.expected_temperature_c}°C
-                  </strong>
-                </span>
+
+              {/* Metrics grid */}
+              <div className="planner-metrics-grid">
+                <div className="planner-metric-item">
+                  <CalendarDays className="planner-metric-icon" />
+                  <div className="planner-metric-content">
+                    <small>Planting window</small>
+                    <strong>{plan.data.selected_month.planting_window}</strong>
+                  </div>
+                </div>
+                <div className="planner-metric-item">
+                  <CloudRain className="planner-metric-icon" />
+                  <div className="planner-metric-content">
+                    <small>Expected rainfall</small>
+                    <strong>
+                      {plan.data.selected_month.expected_rainfall_mm} mm
+                    </strong>
+                  </div>
+                </div>
+                <div className="planner-metric-item">
+                  <ThermometerSun className="planner-metric-icon" />
+                  <div className="planner-metric-content">
+                    <small>Expected temperature</small>
+                    <strong>
+                      {plan.data.selected_month.expected_temperature_c}°C
+                    </strong>
+                  </div>
+                </div>
+                <div className="planner-metric-item">
+                  <TriangleAlert className="planner-metric-icon" />
+                  <div className="planner-metric-content">
+                    <small>Main risk</small>
+                    <strong>{plan.data.selected_month.main_risk}</strong>
+                  </div>
+                </div>
               </div>
-              <div>
-                <CloudRain />
-                <span>
-                  <small>Expected rainfall</small>
-                  <strong>
-                    {plan.data.selected_month.expected_rainfall_mm} mm
-                  </strong>
-                </span>
-              </div>
-              <div>
-                <CalendarDays />
-                <span>
-                  <small>Planting window</small>
-                  <strong>{plan.data.selected_month.planting_window}</strong>
-                </span>
-              </div>
-              <div>
-                <TriangleAlert />
-                <span>
-                  <small>Main risk</small>
-                  <strong>{plan.data.selected_month.main_risk}</strong>
-                </span>
-              </div>
-            </div>
-            <div className="recommendation-grid">
-              {plan.data.selected_month.recommendations.slice(0, 1).map((crop) => (
-                <article key={crop.crop}>
-                  <div className="month-advisory">
-                    <Info aria-hidden="true" />
-                    <span><strong>Why this crop?</strong>{crop.reason}</span>
+
+              {/* Contextual tip and action */}
+              {selectedRecommendation && (
+                <div className="planner-detail-actions">
+                  <div className="planner-tip-card">
+                    <Info className="planner-tip-icon" />
+                    <div className="planner-tip-content">
+                      <strong>Why this crop?</strong>
+                      <p>{selectedRecommendation.reason}</p>
+                    </div>
                   </div>
                   <Dialog
                     open={addToPlanOpen && addToPlanCrop !== null}
@@ -705,13 +744,12 @@ export default function AnnualPlanPage() {
                     <DialogTrigger
                       render={
                         <Button
-                          variant="outline"
-                          size="sm"
-                          className="add-to-plan-btn"
-                          aria-label={`Add ${crop.crop} to plan`}
+                          variant="default"
+                          className="planner-add-button"
+                          aria-label={`Add ${selectedRecommendation.crop} to plan`}
                           onClick={() =>
                             openAddToPlan(
-                              crop.crop,
+                              selectedRecommendation.crop,
                               plan.data.selected_month.month_number,
                               plan.data.selected_month.month,
                             )
@@ -722,33 +760,32 @@ export default function AnnualPlanPage() {
                       <Plus /> Add to plan
                     </DialogTrigger>
                     {addToPlanCrop && (
-                        <DialogContent showCloseButton={false}>
-                          <DialogHeader>
-                            <DialogTitle>Add to plan</DialogTitle>
-                            <DialogDescription>
-                              Confirm details for{' '}
-                              <strong>{addToPlanCrop.name}</strong> in{' '}
-                              {addToPlanCrop.monthName}.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <AddToPlanForm
-                            farmId={farmId}
-                            cropName={addToPlanCrop.name}
-                            monthNumber={addToPlanCrop.monthNumber}
-                            monthName={addToPlanCrop.monthName}
-                            onSuccess={() => {
-                              setAddToPlanOpen(false);
-                              invalidatePlan();
-                            }}
-                            onClose={() => setAddToPlanOpen(false)}
-                          />
-                        </DialogContent>
-                      )}
+                      <DialogContent showCloseButton={false}>
+                        <DialogHeader>
+                          <DialogTitle>Add to plan</DialogTitle>
+                          <DialogDescription>
+                            Confirm details for{' '}
+                            <strong>{addToPlanCrop.name}</strong> in{' '}
+                            {addToPlanCrop.monthName}.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <AddToPlanForm
+                          farmId={farmId}
+                          cropName={addToPlanCrop.name}
+                          monthNumber={addToPlanCrop.monthNumber}
+                          monthName={addToPlanCrop.monthName}
+                          onSuccess={() => {
+                            setAddToPlanOpen(false);
+                            invalidatePlan();
+                          }}
+                          onClose={() => setAddToPlanOpen(false)}
+                        />
+                      </DialogContent>
+                    )}
                   </Dialog>
-                </article>
-              ))}
-            </div>
-          </section>
+                </div>
+              )}
+            </aside>
           </div>
 
           {(scenarioResult || scenario.rainfall !== 0 || scenario.temperature !== 0) && (

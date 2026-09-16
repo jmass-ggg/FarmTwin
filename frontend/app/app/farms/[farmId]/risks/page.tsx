@@ -13,6 +13,16 @@ import {
 import Image, { type StaticImageData } from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  Legend,
+} from 'recharts';
 
 import droughtImage from '../../../../../photos/drought.png';
 import floodImage from '../../../../../photos/flood.png';
@@ -26,9 +36,11 @@ import {
   type ActionRule,
   type HazardAssessment,
   type RiskResponse,
+  type RiskTimelineResponse,
   RiskApiError,
   completeAction,
   getFarmRisks,
+  getFarmRiskTimeline,
 } from '@/lib/api/risks';
 
 const HAZARD_ORDER = ['flood_exposure', 'drought', 'heat', 'heavy_rainfall', 'wind'];
@@ -284,10 +296,14 @@ export default function RiskCenterPage() {
   const { farmId } = useParams<{ farmId: string }>();
   const router = useRouter();
   const [risks, setRisks] = useState<RiskResponse | null>(null);
+  const [timeline, setTimeline] = useState<RiskTimelineResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [timelineLoading, setTimelineLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [timelineError, setTimelineError] = useState<Error | null>(null);
   const [selectedHazard, setSelectedHazard] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const timelineAbortRef = useRef<AbortController | null>(null);
 
   const loadRisks = useCallback(async (signal: AbortSignal) => {
     setLoading(true);
@@ -320,6 +336,28 @@ export default function RiskCenterPage() {
     queueMicrotask(() => void loadRisks(controller.signal));
     return () => controller.abort();
   }, [loadRisks]);
+
+  const loadTimeline = useCallback(async (signal: AbortSignal) => {
+    setTimelineLoading(true);
+    setTimelineError(null);
+    try {
+      const data = await getFarmRiskTimeline(farmId, 7, signal);
+      setTimeline(data);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setTimelineError(err instanceof Error ? err : new Error('Failed to load risk timeline'));
+    } finally {
+      setTimelineLoading(false);
+    }
+  }, [farmId]);
+
+  useEffect(() => {
+    timelineAbortRef.current?.abort();
+    const controller = new AbortController();
+    timelineAbortRef.current = controller;
+    queueMicrotask(() => void loadTimeline(controller.signal));
+    return () => controller.abort();
+  }, [loadTimeline]);
 
   const handleActionComplete = useCallback((hazard: string, actionId: string, completedAt: string) => {
     setRisks((previous) => {
@@ -431,15 +469,84 @@ export default function RiskCenterPage() {
 
           <section className="risk-comparison-card risk-timeline-card workspace-card" aria-labelledby="risk-comparison-title">
             <div className="risk-visual-heading">
-              <div><h2 id="risk-comparison-title">Risk Timeline (Next 7 Days)</h2><p>Forecast of climate risks for your farm.</p></div>
+              <div><h2 id="risk-comparison-title">Risk Timeline (Next 7 Days)</h2><p>Forecast of climate risk severity for your farm.</p></div>
             </div>
-            <output className="risk-timeline-unavailable">
-              <CalendarClock aria-hidden="true" />
-              <div>
-                <strong>7-day risk timeline unavailable</strong>
-                <p>Day-level risk scores are not available from the current risk API. Daily weather evidence cannot be converted into hazard severity lines without approved risk-engine calculations.</p>
+            {timelineLoading && <Skeleton className="h-80 w-full rounded" />}
+            {!timelineLoading && timelineError && (
+              <output className="risk-timeline-unavailable">
+                <CalendarClock aria-hidden="true" />
+                <div>
+                  <strong>7-day risk timeline unavailable</strong>
+                  <p>{timelineError.message}</p>
+                </div>
+              </output>
+            )}
+            {!timelineLoading && !timelineError && timeline && (
+              <div style={{ width: '100%', height: 400 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={timeline.points.map((point) => ({
+                      date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                      'Heavy Rainfall': point.heavy_rainfall.index,
+                      'Heat Stress': point.heat.index,
+                      Drought: point.drought.index,
+                      Flood: point.flood_exposure.index,
+                      Wind: point.wind.index,
+                    }))}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="date" />
+                    <YAxis domain={[0, 100]} label={{ value: 'Risk Severity', angle: -90, position: 'insideLeft' }} />
+                    <Tooltip
+                      formatter={(value: number | null) => (value !== null ? `${value} / 100` : 'Unavailable')}
+                      labelStyle={{ color: '#000' }}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="Heavy Rainfall"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      connectNulls={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Heat Stress"
+                      stroke="#f97316"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      connectNulls={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Drought"
+                      stroke="#d97706"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      connectNulls={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Flood"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      connectNulls={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Wind"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      connectNulls={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
-            </output>
+            )}
           </section>
 
           <section className="risk-recommended-actions workspace-card" aria-labelledby="risk-actions-title">

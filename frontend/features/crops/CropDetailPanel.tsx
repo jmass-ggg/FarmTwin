@@ -45,15 +45,17 @@ export function CropDetailPanel({ result, cropEntry, planHref }: CropDetailPanel
   return (
     <div className="crop-detail-panel workspace-card">
       <div className="crop-detail-hero">
-        <CropVisual cropName={result.crop_name} />
         <div className="crop-detail-title">
           <span>Selected crop</span>
           <h2>{result.crop_name}</h2>
           {cropEntry && <p className="crop-meta">{cropEntry.category}</p>}
+          <div className="crop-detail-score">
+            <strong>{result.hard_exclusion ? 0 : result.suitability_index}%</strong>
+            <span>{result.hard_exclusion ? 'Not suitable' : result.label}</span>
+          </div>
         </div>
-        <div className="crop-detail-score">
-          <strong>{result.hard_exclusion ? 0 : result.suitability_index}%</strong>
-          <span>{result.hard_exclusion ? 'Not suitable' : result.label}</span>
+        <div className="crop-visual-large">
+          <CropVisual cropName={result.crop_name} />
         </div>
       </div>
 

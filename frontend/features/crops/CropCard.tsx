@@ -96,6 +96,15 @@ function scoreBadgeVariant(
 export function CropCard({ result, category, selected, onClick }: CropCardProps) {
   const badgeVariant = scoreBadgeVariant(result.suitability_index, result.hard_exclusion);
   const score = result.hard_exclusion ? 0 : result.suitability_index;
+  
+  // Determine circle color based on score
+  const circleColor = '#e7ede9'; // default gray for unfilled
+  let filledColor = '#c93d3d'; // red for low scores
+  if (score >= 82) {
+    filledColor = '#07883d'; // green for excellent
+  } else if (score >= 68) {
+    filledColor = '#c97b06'; // orange/yellow for moderate
+  }
 
   return (
     <button
@@ -118,7 +127,7 @@ export function CropCard({ result, category, selected, onClick }: CropCardProps)
           data-variant={badgeVariant}
           aria-label={`Suitability score: ${score} percent`}
           style={{
-            background: `conic-gradient(currentColor ${score * 3.6}deg, #e7ede9 0deg)`,
+            background: `conic-gradient(${filledColor} ${score * 3.6}deg, ${circleColor} 0deg)`,
           }}
         >
           <span>{score}%</span>
