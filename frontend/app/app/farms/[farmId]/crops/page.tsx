@@ -348,11 +348,18 @@ export default function CropSimulatorPage() {
   const soilPH = twin?.soil?.depth_0_5cm?.phh2o?.value ?? null;
   const ndmiValue = twin?.satellite?.ndmi?.value ?? null;
 
+  // Calculate 7-day rainfall from daily forecast if available
+  const dailyPrecipitation = (twin?.weather?.daily?.precipitation_sum as number[]) || [];
+  const rainfall7Day = dailyPrecipitation.length >= 7
+    ? dailyPrecipitation.slice(0, 7).reduce((sum, val) => sum + (val || 0), 0)
+    : null;
+
   // Debug logging to see what data we have
   console.log('Twin data:', {
     status: twin?.status,
     temperatureC,
     precipitationMm,
+    rainfall7Day,
     soilClay,
     soilSand,
     soilSilt,
@@ -365,39 +372,45 @@ export default function CropSimulatorPage() {
       label: 'Temperature',
       value: twin?.status === 'ready' && temperatureC !== null
         ? `${temperatureC.toFixed(1)} °C`
-        : '18–28 °C',
-      source: twin?.status === 'ready' ? evidenceSource(twin.weather?.temperature_2m) : 'Farm analysis is not ready',
+        : 'Unavailable',
+      source: twin?.status === 'ready' ? evidenceSource(twin.weather?.temperature_2m) : 'Farm analysis not ready',
       status: twin?.status === 'ready' 
         ? getTemperatureStatus(temperatureC) 
-        : { text: 'Good', variant: 'good' as const },
+        : { text: '', variant: 'unavailable' as const },
       icon: Thermometer,
       iconColor: '#ef4444',
       iconBg: '#fee2e2',
     },
     {
-      label: 'Rainfall (Season)',
-      value: twin?.status === 'ready' && precipitationMm !== null && precipitationMm > 0
-        ? `${precipitationMm.toFixed(1)} mm`
-        : '650 mm',
-      source: twin?.status === 'ready' ? evidenceSource(twin.weather?.precipitation) : 'Farm analysis is not ready',
-      status: { text: 'Moderate', variant: 'moderate' as const },
+      label: 'Rainfall — 7 Days',
+      value: twin?.status === 'ready' && rainfall7Day !== null
+        ? `${rainfall7Day.toFixed(1)} mm`
+        : 'Unavailable',
+      source: twin?.status === 'ready' ? 'Open-Meteo 7-day forecast' : 'Farm analysis not ready',
+      status: twin?.status === 'ready' && rainfall7Day !== null
+        ? (rainfall7Day < 20 ? { text: 'Low', variant: 'moderate' as const } 
+           : rainfall7Day < 50 ? { text: 'Moderate', variant: 'moderate' as const }
+           : { text: 'High', variant: 'good' as const })
+        : { text: '', variant: 'unavailable' as const },
       icon: CloudRain,
       iconColor: '#3b82f6',
       iconBg: '#dbeafe',
     },
     {
-      label: 'Soil Type',
+      label: 'Soil',
       value: twin?.status === 'ready'
         ? (soilClay !== null && soilSand !== null && soilSilt !== null
             ? getSoilTexture(soilClay, soilSand, soilSilt)
             : soilPH !== null
               ? `pH ${soilPH.toFixed(1)}`
-              : 'Loam')
-        : 'Loam',
-      source: twin?.status === 'ready' ? evidenceSource(twin.soil?.depth_0_5cm?.phh2o) : 'Farm analysis is not ready',
+              : 'Unavailable')
+        : 'Unavailable',
+      source: twin?.status === 'ready' 
+        ? (soilPH !== null ? evidenceSource(twin.soil?.depth_0_5cm?.phh2o) : 'No soil data available')
+        : 'Farm analysis not ready',
       status: twin?.status === 'ready' && soilPH !== null 
         ? getSoilPHStatus(soilPH) 
-        : { text: 'Good', variant: 'good' as const },
+        : { text: '', variant: 'unavailable' as const },
       icon: Mountain,
       iconColor: '#22c55e',
       iconBg: '#dcfce7',
@@ -406,11 +419,13 @@ export default function CropSimulatorPage() {
       label: 'Soil Moisture',
       value: twin?.status === 'ready' && ndmiValue !== null
         ? `${getMoisturePercentage(ndmiValue)}%`
-        : '62%',
-      source: twin?.status === 'ready' ? evidenceSource(twin.satellite?.ndmi) : 'Farm analysis is not ready',
+        : 'Unavailable',
+      source: twin?.status === 'ready' && ndmiValue !== null 
+        ? 'Sentinel-2 NDMI (satellite-derived)' 
+        : (twin?.status === 'ready' ? 'Satellite data unavailable' : 'Farm analysis not ready'),
       status: twin?.status === 'ready' 
         ? getMoistureStatus(ndmiValue) 
-        : { text: 'Moderate', variant: 'moderate' as const },
+        : { text: '', variant: 'unavailable' as const },
       icon: Droplets,
       iconColor: '#3b82f6',
       iconBg: '#dbeafe',
