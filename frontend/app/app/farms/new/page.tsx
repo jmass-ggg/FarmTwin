@@ -3,7 +3,7 @@
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { FarmNameInput } from '@/features/farm/FarmNameInput';
 import { MapEditor } from '@/features/farm/MapEditor';
@@ -16,11 +16,22 @@ export default function NewFarmPage() {
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [geometryError, setGeometryError] = useState<string | null>(null);
+  const [currentGeometry, setCurrentGeometry] = useState<GeoJSONPolygon | null>(null);
+  const [isGeometryValid, setIsGeometryValid] = useState(false);
+  const [boundaryConfirmed, setBoundaryConfirmed] = useState(false);
 
   const save = async (geometry: GeoJSONPolygon) => {
     const trimmedName = name.trim();
     if (!trimmedName) {
       setNameError('Enter a farm name before saving.');
+      return;
+    }
+    if (!geometry) {
+      setGeometryError('Complete your farm boundary before saving.');
+      return;
+    }
+    if (!boundaryConfirmed) {
+      setGeometryError('Confirm that this boundary represents land you own or manage.');
       return;
     }
     setSaving(true);
@@ -35,8 +46,10 @@ export default function NewFarmPage() {
       router.push(`/app/farms/${farm.id}/twin`);
     } catch (error) {
       if (error instanceof ValidationError) {
-        setNameError(error.fieldMessage('name') ?? null);
-        setGeometryError(error.fieldMessage('geometry') ?? error.message);
+        const nameMessage = error.fieldMessage('name');
+        const geometryMessage = error.fieldMessage('geometry');
+        setNameError(nameMessage ?? null);
+        setGeometryError(geometryMessage ?? (nameMessage ? null : error.message));
       } else {
         setGeometryError(error instanceof Error ? error.message : 'Farm creation failed.');
       }
@@ -45,30 +58,64 @@ export default function NewFarmPage() {
     }
   };
 
+  const handleSaveClick = () => {
+    if (saving) return;
+    if (!name.trim()) {
+      setNameError('Enter a farm name before saving.');
+      return;
+    }
+    if (!currentGeometry || !isGeometryValid) {
+      setGeometryError('Complete your farm boundary before saving.');
+      return;
+    }
+    if (!boundaryConfirmed) {
+      setGeometryError('Confirm that this boundary represents land you own or manage.');
+      return;
+    }
+    void save(currentGeometry);
+  };
+
+  const handleGeometryChange = useCallback((geometry: GeoJSONPolygon | null, isValid: boolean) => {
+    setCurrentGeometry(geometry);
+    setIsGeometryValid(isValid);
+    if (isValid) setGeometryError(null);
+  }, []);
+
+  const canSave = Boolean(name.trim())
+    && isGeometryValid
+    && currentGeometry !== null
+    && boundaryConfirmed
+    && !saving;
+
   return (
     <div className="farm-editor-page">
       <Link className="back-link" href="/app"><ArrowLeft /> Back to overview</Link>
-      <header className="editor-page-heading">
+      <header className="editor-page-heading create-farm-heading">
         <div>
           <p className="section-kicker">Create farm</p>
           <h1>Create your farm</h1>
           <p>Name the farm, find its location, then click the map to mark at least three boundary corners.</p>
         </div>
-        <FarmNameInput value={name} onChange={(value) => { setName(value); setNameError(null); }} error={nameError} />
       </header>
+      <FarmNameInput
+        value={name}
+        onChange={(value) => { setName(value); setNameError(null); }}
+        error={nameError}
+        onSave={handleSaveClick}
+        canSave={canSave}
+        isSaving={saving}
+      />
       <ol className="farm-create-steps" aria-label="Farm creation steps">
         <li data-current><span>1</span> Locate your land</li>
         <li><span>2</span> Draw the boundary</li>
         <li><span>3</span> Confirm and analyse</li>
       </ol>
       <MapEditor
-        canSave={Boolean(name.trim())}
-        farmName={name}
-        onNameChange={(value) => { setName(value); setNameError(null); }}
-        isSaving={saving}
         apiError={geometryError}
         requireBoundaryConfirmation
-        onSave={save}
+        hideSaveButton
+        onGeometryChange={handleGeometryChange}
+        onBoundaryConfirmationChange={setBoundaryConfirmed}
       />
     </div>
   );

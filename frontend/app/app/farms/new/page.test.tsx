@@ -43,7 +43,12 @@ describe('farm creation route', () => {
 
   it('creates a farm from an imported boundary and navigates to it', async () => {
     render(<NewFarmPage />);
-    await userEvent.type(screen.getByLabelText('Farm name'), 'Upper Field');
+    const nameInput = screen.getByLabelText('Farm name');
+    await userEvent.type(nameInput, 'Upper Field');
+    expect(nameInput).toHaveValue('Upper Field');
+    expect(screen.getAllByRole('button', { name: 'Save farm' })).toHaveLength(1);
+    await userEvent.tab();
+    expect(createFarm).not.toHaveBeenCalled();
     await userEvent.click(screen.getByText('Import GeoJSON'));
     fireEvent.change(screen.getByLabelText('GeoJSON Polygon'), { target: { value: boundary } });
     await userEvent.click(screen.getByRole('button', { name: 'Use pasted boundary' }));
@@ -51,7 +56,7 @@ describe('farm creation route', () => {
       name: 'I confirm this boundary represents land I own or manage.',
     }));
     await userEvent.click(screen.getByRole('button', { name: 'Save farm' }));
-    await waitFor(() => expect(createFarm).toHaveBeenCalled());
+    await waitFor(() => expect(createFarm).toHaveBeenCalledTimes(1));
     expect(createFarm.mock.calls[0][0]).toMatchObject({
       name: 'Upper Field',
       idempotency_key: '11111111-1111-4111-8111-111111111111',

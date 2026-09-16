@@ -56,7 +56,18 @@ const STAGE_LABELS: Record<string, string> = {
 
 function valueText(value: EnvironmentalValue | null | undefined, digits = 1): string {
   if (value?.value === null || value?.value === undefined) return 'Unavailable';
-  return value.value.toLocaleString(undefined, { maximumFractionDigits: digits }) + ' ' + value.unit;
+  
+  // Clean up unit display
+  let unit = value.unit;
+  if (unit === 'dimensionless') unit = '';
+  else if (unit === 'percent') unit = '%';
+  else if (unit === 'metres') unit = 'm';
+  else if (unit === 'degrees') unit = '°';
+  else if (unit === 'g/kg') unit = 'g/kg';
+  else if (unit === 'Celsius') unit = '°C';
+  
+  const formattedValue = value.value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return unit ? `${formattedValue} ${unit}` : formattedValue;
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -402,20 +413,25 @@ function TerrainSection({ terrain }: { terrain: FarmTwinResult['terrain'] }) {
       {!terrain ? (
         <p className="insight-unavailable">Unavailable — terrain provider did not return data.</p>
       ) : (
-        <dl>
-          <div><dt>Mean elevation</dt><dd>{valueText(terrain.mean_elevation_m)}</dd></div>
-          <div><dt>Min elevation</dt><dd>{valueText(terrain.min_elevation_m)}</dd></div>
-          <div><dt>Max elevation</dt><dd>{valueText(terrain.max_elevation_m)}</dd></div>
-          <div><dt>Mean slope</dt><dd>{valueText(terrain.mean_slope_deg)}</dd></div>
-          {terrain.dem_source && <div><dt>DEM source</dt><dd>{terrain.dem_source}</dd></div>}
-          {terrain.resolution_m && <div><dt>DEM resolution</dt><dd>{terrain.resolution_m} m</dd></div>}
-          <div>
-            <dt>Flood exposure</dt>
-            <dd className="insight-unavailable-inline">
-              Unavailable — drainage and hydrological evidence are required.
-            </dd>
+        <>
+          <dl>
+            <div><dt>Mean elevation</dt><dd>{valueText(terrain.mean_elevation_m)}</dd></div>
+            <div><dt>Min elevation</dt><dd>{valueText(terrain.min_elevation_m)}</dd></div>
+            <div><dt>Max elevation</dt><dd>{valueText(terrain.max_elevation_m)}</dd></div>
+            <div><dt>Mean slope</dt><dd>{valueText(terrain.mean_slope_deg)}</dd></div>
+            {terrain.dem_source && <div><dt>DEM source</dt><dd>{terrain.dem_source}</dd></div>}
+            {terrain.resolution_m && <div><dt>DEM resolution</dt><dd>{terrain.resolution_m} m</dd></div>}
+          </dl>
+          <div style={{ marginTop: '16px' }}>
+            <p style={{ margin: 0, color: '#738178', fontSize: '.82rem', fontWeight: 500 }}>Flood exposure</p>
+            <p className="insight-unavailable" style={{ marginTop: '4px' }}>
+              Unavailable
+            </p>
+            <p className="insight-note">
+              Drainage and hydrological evidence are required.
+            </p>
           </div>
-        </dl>
+        </>
       )}
     </section>
   );
@@ -426,12 +442,20 @@ function ConduitSection({ conduit }: { conduit: FarmTwinResult['conduit'] }) {
     <section className="farm-insight-group">
       <h2><CloudRain /> Conduit station</h2>
       {!conduit ? (
-        <p className="insight-unavailable">Unavailable — no Conduit station data returned.</p>
+        <>
+          <p style={{ margin: 0, color: '#738178', fontSize: '.82rem', fontWeight: 500 }}>Unavailable</p>
+          <p className="insight-note" style={{ marginTop: '4px' }}>
+            Data is currently unavailable for this source.
+          </p>
+        </>
       ) : !conduit.eligible ? (
         <>
-          <p className="insight-unavailable">{conduit.eligibility_reason}</p>
+          <p style={{ margin: 0, color: '#738178', fontSize: '.82rem', fontWeight: 500 }}>Ineligible</p>
+          <p className="insight-note" style={{ marginTop: '4px' }}>
+            {conduit.eligibility_reason}
+          </p>
           {conduit.station_distance_km !== null && (
-            <dl>
+            <dl style={{ marginTop: '12px' }}>
               <div><dt>Nearest station distance</dt><dd>{conduit.station_distance_km.toFixed(1)} km</dd></div>
             </dl>
           )}

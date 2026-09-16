@@ -182,11 +182,14 @@ interface MapEditorProps {
   hasExternalChanges?: boolean;
   apiError?: string | null;
   requireBoundaryConfirmation?: boolean;
-  /** Optional: current farm name value — shown inline in save row when name is missing */
-  farmName?: string;
-  /** Optional: callback when user types a name inline in the save row */
-  onNameChange?: (name: string) => void;
-  onSave: (geometry: GeoJSONPolygon) => Promise<void> | void;
+  /** Optional: callback when geometry changes - provides geometry and validity */
+  onGeometryChange?: (geometry: GeoJSONPolygon | null, isValid: boolean) => void;
+  /** Optional: callback when the land-management confirmation changes */
+  onBoundaryConfirmationChange?: (confirmed: boolean) => void;
+  /** Optional: hide the save button at the bottom */
+  hideSaveButton?: boolean;
+  /** Optional: save handler - required if hideSaveButton is false */
+  onSave?: (geometry: GeoJSONPolygon) => Promise<void> | void;
 }
 
 export function MapEditor({
@@ -196,8 +199,9 @@ export function MapEditor({
   hasExternalChanges = false,
   apiError,
   requireBoundaryConfirmation = false,
-  farmName,
-  onNameChange,
+  onGeometryChange,
+  onBoundaryConfirmationChange,
+  hideSaveButton = false,
   onSave,
 }: MapEditorProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -238,6 +242,16 @@ export function MapEditor({
     () => validateDraft(coordinates, closed),
     [coordinates, closed],
   );
+
+  // Notify parent of geometry changes
+  useEffect(() => {
+    if (onGeometryChange) {
+      onGeometryChange(draftGeometry, validationState.valid);
+    }
+  }, [draftGeometry, validationState.valid, onGeometryChange]);
+  useEffect(() => {
+    onBoundaryConfirmationChange?.(boundaryConfirmed);
+  }, [boundaryConfirmed, onBoundaryConfirmationChange]);
   const hasUnsavedChanges = dirty || hasExternalChanges;
   const distinctPointCount = useMemo(() => {
     const open = closed ? coordinates.slice(0, -1) : coordinates;
@@ -245,8 +259,8 @@ export function MapEditor({
   }, [coordinates, closed]);
 
   const saveBlockingReason = !canSave ? 'Enter a farm name at the top of the page.'
+    : !closed ? 'Double-click the map or click Close ring to finish your boundary.'
     : distinctPointCount < 3 ? `Add at least ${3 - distinctPointCount} more boundary ${3 - distinctPointCount === 1 ? 'point' : 'points'}.`
-    : !closed ? 'Double-click the map or click "Close ring" to finish the boundary.'
     : !validationState.valid ? validationState.message
     : requireBoundaryConfirmation && !boundaryConfirmed ? 'Tick the confirmation checkbox above.'
     : !hasUnsavedChanges ? 'The saved boundary is unchanged.'
@@ -506,7 +520,6 @@ export function MapEditor({
       remember();
       change(geometry.coordinates[0] as Position[], true);
       setImportError(null);
-      setBoundaryConfirmed(false);
       const first = geometry.coordinates[0][0];
       setFallbackCenter(first as Position);
       setFallbackZoom(14);
@@ -712,19 +725,6 @@ export function MapEditor({
       {apiError && <p className="form-error" role="alert">{apiError}</p>}
       <div className="editor-save-row">
         <div>
-          {/* Inline name input — shown when user has scrolled past the top name field */}
-          {!canSave && onNameChange !== undefined && (
-            <div className="inline-name-field">
-              <label htmlFor="inline-farm-name" className="inline-name-label">Farm name</label>
-              <Input
-                id="inline-farm-name"
-                placeholder="Enter a name for this farm"
-                value={farmName ?? ''}
-                onChange={(e) => onNameChange(e.target.value)}
-                aria-label="Farm name"
-              />
-            </div>
-          )}
           {requireBoundaryConfirmation && closed && coordinates.length >= 3 && (
             <label className="boundary-confirmation">
               <input
@@ -737,16 +737,20 @@ export function MapEditor({
           )}
           <p>{hasUnsavedChanges ? 'You have unsaved changes.' : initialGeometry ? 'The saved boundary is unchanged.' : 'Draw your land boundary to get started.'}</p>
         </div>
-        <Button
-          className="primary-button"
-          type="button"
-          disabled={!validationState.valid || !draftGeometry || !hasUnsavedChanges || !canSave || isSaving || (requireBoundaryConfirmation && !boundaryConfirmed)}
-          onClick={() => draftGeometry && void onSave(draftGeometry)}
-        >
-          <Save /> {isSaving ? 'Saving farm…' : 'Save farm'}
-        </Button>
+        {!hideSaveButton && typeof onSave === 'function' && (
+          <Button
+            className="primary-button"
+            type="button"
+            disabled={!validationState.valid || !draftGeometry || !hasUnsavedChanges || !canSave || isSaving || (requireBoundaryConfirmation && !boundaryConfirmed)}
+            onClick={() => {
+              if (draftGeometry) void onSave(draftGeometry);
+            }}
+          >
+            <Save /> {isSaving ? 'Saving farm…' : 'Save farm'}
+          </Button>
+        )}
       </div>
-      {saveBlockingReason && <p className="map-save-blocker" role="status">{saveBlockingReason}</p>}
+      {saveBlockingReason && <output className="map-save-blocker">{saveBlockingReason}</output>}
     </section>
   );
 }

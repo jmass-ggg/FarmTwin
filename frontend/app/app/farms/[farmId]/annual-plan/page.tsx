@@ -541,13 +541,6 @@ export default function AnnualPlanPage() {
           <h1>Your Annual Farm Plan</h1>
           <p>See which crops are most suitable for each month based on available farm conditions.</p>
         </div>
-        {plan.data?.data_mode && (
-          <span className="mode-pill" data-mode={plan.data.data_mode}>
-            {plan.data.data_mode === 'demonstration'
-              ? 'Demonstration profile'
-              : plan.data.data_mode.replace(/_/g, ' ')}
-          </span>
-        )}
       </header>
 
       {cropPlan.data && (
@@ -570,13 +563,6 @@ export default function AnnualPlanPage() {
       )}
       {plan.data && (
         <>
-          <div className="evidence-banner">
-            <Info />
-            <span>
-              <strong>Planning estimate—not a forecast.</strong>{' '}
-              {plan.data.disclaimer}
-            </span>
-          </div>
           <details className="planner-secondary-tools">
             <summary>Climate what-if</summary>
             <ScenarioControls
@@ -907,19 +893,6 @@ export default function AnnualPlanPage() {
             )}
           </section>
           )}
-
-          <details className="assumptions-card">
-            <summary>Model assumptions and limitations</summary>
-            <ul>
-              {plan.data.assumptions.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            <p>
-              Model: {plan.data.model_version} · Centroid{' '}
-              {plan.data.centroid.latitude}, {plan.data.centroid.longitude}
-            </p>
-          </details>
         </>
       )}
 

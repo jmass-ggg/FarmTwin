@@ -456,17 +456,6 @@ export default function CropSimulatorPage() {
             Select a crop to see how it may perform on your farm based on current soil, weather, and climate data.
           </p>
         </div>
-        {dataMode && (
-          <span
-            className="mode-pill"
-            data-mode={dataMode}
-            aria-label={`Data mode: ${dataMode}`}
-          >
-            {dataMode === 'demonstration'
-              ? 'Demonstration'
-              : snapshotDateLabel ?? 'Snapshot-backed'}
-          </span>
-        )}
       </header>
 
       {/* Compact environment metrics */}
