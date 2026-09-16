@@ -35,11 +35,6 @@ function formatAcquiredAt(iso: string | null | undefined): string {
   }
 }
 
-function formatValue(v: EnvironmentalValue | null | undefined): string {
-  if (!v || v.value === null) return '—';
-  return `${v.value.toLocaleString()} ${v.unit}`;
-}
-
 // ---------------------------------------------------------------------------
 // Metric row — a single labelled environmental value with provenance
 // ---------------------------------------------------------------------------
