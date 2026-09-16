@@ -44,7 +44,7 @@ function Navigation({ close }: { close?: () => void }) {
     { href: farmBase ? `${farmBase}/crops` : '#', label: 'Crop Simulator', icon: FlaskConical, available: Boolean(farmBase) },
     { href: farmBase ? `${farmBase}/annual-plan` : '#', label: 'Annual Crop Plan', icon: CalendarDays, available: Boolean(farmBase) },
     { href: farmBase ? `${farmBase}/risks` : '#', label: 'Disaster Center', icon: ShieldAlert, available: Boolean(farmBase) },
-    { href: farmBase ? `${farmBase}/twin#climate` : '#', label: 'Climate', icon: CloudSun, available: Boolean(farmBase) },
+    { href: farmBase ? `${farmBase}/climate` : '#', label: 'Climate', icon: CloudSun, available: Boolean(farmBase) },
   ];
   return (
     <nav className="app-navigation" aria-label="Workspace navigation">
@@ -60,7 +60,9 @@ function Navigation({ close }: { close?: () => void }) {
                 (href.endsWith('disaster-center') &&
                   pathname.includes('/risks')) ||
                 (href.endsWith('crop-simulator') &&
-                  pathname.includes('/crops'));
+                  pathname.includes('/crops')) ||
+                (href.endsWith('/climate') &&
+                  pathname.includes('/climate'));
           if (!available) {
             return (
               <span
