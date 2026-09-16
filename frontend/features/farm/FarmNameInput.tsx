@@ -9,6 +9,7 @@ export function FarmNameInput({
   onSave,
   canSave = false,
   isSaving = false,
+  saveLabel = 'Save farm',
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -16,6 +17,7 @@ export function FarmNameInput({
   onSave?: () => void;
   canSave?: boolean;
   isSaving?: boolean;
+  saveLabel?: string;
 }) {
   return (
     <div className="farm-name-field">
@@ -42,7 +44,7 @@ export function FarmNameInput({
             disabled={!canSave || isSaving}
             className="farm-name-save-button"
           >
-            <Save /> {isSaving ? 'Saving…' : 'Save farm'}
+            <Save /> {isSaving ? 'Saving…' : saveLabel}
           </Button>
         )}
       </div>

@@ -184,6 +184,8 @@ interface MapEditorProps {
   requireBoundaryConfirmation?: boolean;
   /** Optional: callback when geometry changes - provides geometry and validity */
   onGeometryChange?: (geometry: GeoJSONPolygon | null, isValid: boolean) => void;
+  /** Optional: callback for progress UI while a boundary is being drawn */
+  onDrawingStateChange?: (hasPoints: boolean, closed: boolean) => void;
   /** Optional: callback when the land-management confirmation changes */
   onBoundaryConfirmationChange?: (confirmed: boolean) => void;
   /** Optional: hide the save button at the bottom */
@@ -200,6 +202,7 @@ export function MapEditor({
   apiError,
   requireBoundaryConfirmation = false,
   onGeometryChange,
+  onDrawingStateChange,
   onBoundaryConfirmationChange,
   hideSaveButton = false,
   onSave,
@@ -249,6 +252,9 @@ export function MapEditor({
       onGeometryChange(draftGeometry, validationState.valid);
     }
   }, [draftGeometry, validationState.valid, onGeometryChange]);
+  useEffect(() => {
+    onDrawingStateChange?.(coordinates.length > 0, closed);
+  }, [closed, coordinates.length, onDrawingStateChange]);
   useEffect(() => {
     onBoundaryConfirmationChange?.(boundaryConfirmed);
   }, [boundaryConfirmed, onBoundaryConfirmationChange]);

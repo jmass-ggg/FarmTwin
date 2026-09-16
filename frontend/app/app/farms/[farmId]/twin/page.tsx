@@ -3,7 +3,7 @@
 import {
   AlertCircle, CheckCircle2, CircleDot, CloudRain, Layers3,
   LocateFixed, MapPin, Pencil, PlayCircle, RefreshCw,
-  Search, Sprout, ThermometerSun,
+  Ruler, Search, Sprout, ThermometerSun,
 } from 'lucide-react';
 import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
 import Link from 'next/link';
@@ -14,6 +14,7 @@ import { ApiErrorState } from '@/components/api-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ClimateOverview } from '@/features/twin/ClimateOverview';
 import { EvidenceSection } from '@/features/twin/EvidenceSection';
 import { useApiResource } from '@/hooks/use-api-resource';
 import { farmTwinApi } from '@/lib/api/client';
@@ -141,10 +142,14 @@ function StageProgress({ stages }: { stages: Record<string, JobStage> }) {
 
 function TwinMap({
   farmName,
+  areaHectares,
+  editHref,
   geometry,
   twin,
 }: {
   farmName: string;
+  areaHectares: number;
+  editHref: string;
   geometry: GeoJSONPolygon;
   twin: FarmTwinResult | null;
 }) {
@@ -155,6 +160,7 @@ function TwinMap({
   const [query, setQuery] = useState('');
   const [searchStatus, setSearchStatus] = useState<string | null>(null);
   const [mapUnavailable, setMapUnavailable] = useState(false);
+  const [showArea, setShowArea] = useState(true);
   const colour = layerColour(layer, twin);
 
   useEffect(() => {
@@ -201,7 +207,11 @@ function TwinMap({
           (acc, c) => acc.extend(c),
           new maplibregl.LngLatBounds(coordinates[0], coordinates[0]),
         );
-        map.fitBounds(bounds, { padding: 90, maxZoom: 17 });
+        const reserveInspector = (containerRef.current?.clientWidth ?? 0) > 960;
+        map.fitBounds(bounds, {
+          padding: { top: 90, bottom: 90, left: 90, right: reserveInspector ? 350 : 90 },
+          maxZoom: 17,
+        });
       }
       setMapUnavailable(false);
     });
@@ -252,7 +262,7 @@ function TwinMap({
           <Search aria-hidden="true" />
           <Input
             aria-label="Search a location"
-            placeholder="Search location, field or landmark"
+            placeholder="Search location, field name, or landmark..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void search(); }}
@@ -285,13 +295,28 @@ function TwinMap({
           <span>The basemap could not load. Your farm data is still available.</span>
         </output>
       )}
+      <div className="twin-map-edit-tools" aria-label="Farm map tools">
+        <Link href={editHref} aria-label="Edit farm boundary">
+          <Pencil aria-hidden="true" />
+          <span>Edit<br />shape</span>
+        </Link>
+        <button
+          type="button"
+          aria-label="Show measured farm area"
+          aria-pressed={showArea}
+          onClick={() => setShowArea((current) => !current)}
+        >
+          <Ruler aria-hidden="true" />
+          <span>Measure<br />area</span>
+        </button>
+      </div>
       <div className="twin-map-label">
-        <strong>{farmName}</strong>
-        <span>
-          {layer === 'satellite'
-            ? 'Saved farm boundary'
-            : (LAYERS.find((l) => l.id === layer)?.label ?? 'Insight') + ' · farm-wide summary'}
-        </span>
+        <strong>
+          {farmName}{showArea ? ` · ${areaHectares.toLocaleString(undefined, { maximumFractionDigits: 2 })} ha` : ''}
+        </strong>
+        {layer !== 'satellite' && (
+          <span>{(LAYERS.find((l) => l.id === layer)?.label ?? 'Insight') + ' · farm-wide summary'}</span>
+        )}
       </div>
       <div className="twin-basemap-switcher" aria-label="Basemap">
         <button type="button" data-active={basemap === 'satellite' || undefined} onClick={() => setBasemap('satellite')}>Satellite</button>
@@ -560,8 +585,11 @@ export default function FarmTwinPage() {
   // Initial load
   useEffect(() => {
     const controller = new AbortController();
-    void loadTwin(controller.signal);
-    return () => controller.abort();
+    const timer = window.setTimeout(() => void loadTwin(controller.signal), 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [loadTwin]);
 
   // Poll while pending — stops automatically when status changes
@@ -614,7 +642,13 @@ export default function FarmTwinPage() {
   return (
     <div className="twin-page">
       <div className="twin-map-column">
-        <TwinMap farmName={farmData.name} geometry={farmData.current_geometry.geometry} twin={twin} />
+        <TwinMap
+          farmName={farmData.name}
+          areaHectares={farmData.current_geometry.hectares}
+          editHref={'/app/farms/' + farmId + '/edit'}
+          geometry={farmData.current_geometry.geometry}
+          twin={twin}
+        />
       </div>
 
       <aside className="farm-insight-panel" aria-label={farmData.name + ' insights'}>
@@ -634,6 +668,10 @@ export default function FarmTwinPage() {
             <Pencil />
           </Button>
         </header>
+
+        <div className="farm-inspector-tabs" role="tablist" aria-label="Farm details">
+          <button type="button" role="tab" aria-selected="true">Overview</button>
+        </div>
 
         <div className="farm-boundary-confirmed">
           <MapPin />
@@ -691,6 +729,19 @@ export default function FarmTwinPage() {
             <TerrainSection terrain={twin.terrain} />
             <ConduitSection conduit={twin.conduit} />
             <SourceStatusSection statuses={displayStatuses} />
+            <details className="twin-evidence-accordion">
+              <summary>Evidence and source details</summary>
+              <div className="twin-evidence-stack">
+                <EvidenceSection title="Weather" status={statuses.weather ?? 'unavailable'} values={evidence.weather} />
+                <EvidenceSection title="Satellite" status={statuses.satellite ?? 'unavailable'} values={evidence.satellite} />
+                <EvidenceSection title="Soil" status={statuses.soil ?? 'unavailable'} values={evidence.soil} />
+                <EvidenceSection title="Terrain" status={statuses.terrain ?? 'unavailable'} values={evidence.terrain} />
+                <EvidenceSection title="Conduit" status={statuses.conduit ?? 'unavailable'} values={evidence.conduit} />
+              </div>
+              <p className="twin-evidence-note">
+                Map colours summarise farm-wide evidence. Pixel-level spatial layers appear only when a source supplies a georeferenced raster.
+              </p>
+            </details>
             <Button
               className="primary-button twin-refresh-button"
               onClick={() => void runAnalysis()}
@@ -704,25 +755,14 @@ export default function FarmTwinPage() {
         {actionError && <p className="form-error" role="alert">{actionError}</p>}
       </aside>
 
-      {twin?.status === 'ready' && (
-        <section className="twin-evidence-drawer" aria-label="Farm evidence and provenance">
-          <header>
-            <div>
-              <p className="section-kicker">Evidence</p>
-              <h2>How these insights were built</h2>
-            </div>
-            <span>{twin.data_mode ?? 'unknown'} data</span>
-          </header>
-          <div className="twin-evidence-grid">
-            <EvidenceSection title="Weather" status={statuses.weather ?? 'unavailable'} values={evidence.weather} />
-            <EvidenceSection title="Satellite" status={statuses.satellite ?? 'unavailable'} values={evidence.satellite} />
-            <EvidenceSection title="Soil" status={statuses.soil ?? 'unavailable'} values={evidence.soil} />
-            <EvidenceSection title="Terrain" status={statuses.terrain ?? 'unavailable'} values={evidence.terrain} />
-            <EvidenceSection title="Conduit" status={statuses.conduit ?? 'unavailable'} values={evidence.conduit} />
-          </div>
-          <p className="twin-evidence-note">
-            Map colours summarise farm-wide evidence. Pixel-level spatial layers appear only when a source supplies a georeferenced raster.
-          </p>
+      {/* Climate section - separate from insights panel */}
+      {!twinLoading && !twinError && twin?.status === 'ready' && (
+        <section id="climate" className="twin-climate-section" aria-label="Climate Overview">
+          <ClimateOverview 
+            weather={twin.weather}
+            satellite={twin.satellite}
+            climateBaseline={twin.climate_baseline}
+          />
         </section>
       )}
     </div>

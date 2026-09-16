@@ -43,3 +43,27 @@ it('keeps the saved revision and offers retry when analysis cannot start', async
   expect(api.updateFarm).toHaveBeenCalledTimes(1);
   expect(api.triggerAnalysis).toHaveBeenCalledTimes(2);
 });
+
+it('keeps the farm name input focused and saves the complete edited name', async () => {
+  const updatedFarm = {
+    name: 'Green Valley Farm',
+    current_geometry_revision: 1,
+    current_geometry: { id: 'revision-one', geometry },
+  };
+  api.updateFarm.mockResolvedValueOnce(updatedFarm);
+  mount();
+
+  const nameInput = await screen.findByLabelText('Farm name');
+  await userEvent.clear(nameInput);
+  await userEvent.type(nameInput, 'Green Valley Farm');
+
+  expect(nameInput).toHaveValue('Green Valley Farm');
+  expect(nameInput).toHaveFocus();
+  expect(api.updateFarm).not.toHaveBeenCalled();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Save name' }));
+  await waitFor(() => expect(api.updateFarm).toHaveBeenCalledWith(
+    '98c56a7f-9c69-4bc4-ae26-35ac8904d1be',
+    { name: 'Green Valley Farm' },
+  ));
+});

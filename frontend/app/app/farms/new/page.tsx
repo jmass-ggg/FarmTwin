@@ -19,6 +19,7 @@ export default function NewFarmPage() {
   const [currentGeometry, setCurrentGeometry] = useState<GeoJSONPolygon | null>(null);
   const [isGeometryValid, setIsGeometryValid] = useState(false);
   const [boundaryConfirmed, setBoundaryConfirmed] = useState(false);
+  const [hasBoundaryPoints, setHasBoundaryPoints] = useState(false);
 
   const save = async (geometry: GeoJSONPolygon) => {
     const trimmedName = name.trim();
@@ -94,7 +95,7 @@ export default function NewFarmPage() {
         <div>
           <p className="section-kicker">Create farm</p>
           <h1>Create your farm</h1>
-          <p>Name the farm, find its location, then click the map to mark at least three boundary corners.</p>
+          <p>Name the farm, find its location, then mark its boundary.</p>
         </div>
       </header>
       <FarmNameInput
@@ -106,15 +107,16 @@ export default function NewFarmPage() {
         isSaving={saving}
       />
       <ol className="farm-create-steps" aria-label="Farm creation steps">
-        <li data-current><span>1</span> Locate your land</li>
-        <li><span>2</span> Draw the boundary</li>
-        <li><span>3</span> Confirm and analyse</li>
+        <li data-current={!hasBoundaryPoints || undefined} data-complete={hasBoundaryPoints || undefined}><span>1</span> Locate your land</li>
+        <li data-current={Boolean(hasBoundaryPoints && !currentGeometry) || undefined} data-complete={Boolean(currentGeometry) || undefined}><span>2</span> Draw the boundary</li>
+        <li data-current={Boolean(currentGeometry && !boundaryConfirmed) || undefined} data-complete={boundaryConfirmed || undefined}><span>3</span> Confirm and analyse</li>
       </ol>
       <MapEditor
         apiError={geometryError}
         requireBoundaryConfirmation
         hideSaveButton
         onGeometryChange={handleGeometryChange}
+        onDrawingStateChange={setHasBoundaryPoints}
         onBoundaryConfirmationChange={setBoundaryConfirmed}
       />
     </div>

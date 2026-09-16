@@ -27,17 +27,21 @@ import {
   triggerAnalysis,
   updateFarm,
   ValidationError,
+  type FarmResponse,
   type GeoJSONPolygon,
 } from '@/lib/api/farms';
-import { Button } from '@/components/ui/button';
 
-function FarmEditForm({ farmId }: { farmId: string }) {
+function FarmEditWorkspace({
+  farmId,
+  farm,
+  onReload,
+}: {
+  farmId: string;
+  farm: FarmResponse;
+  onReload: () => void;
+}) {
   const queryClient = useQueryClient();
-  const farmQuery = useQuery({
-    queryKey: ['farm', farmId],
-    queryFn: ({ signal }) => getFarm(farmId, signal),
-  });
-  const [name, setName] = useState<string | null>(null);
+  const [name, setName] = useState(farm.name);
   const [saving, setSaving] = useState(false);
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -45,15 +49,7 @@ function FarmEditForm({ farmId }: { farmId: string }) {
   const [staleOpen, setStaleOpen] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-  if (farmQuery.isPending) {
-    return <section className="workspace-card loading-card"><Skeleton className="h-8 w-64" /><Skeleton className="h-96 w-full" /></section>;
-  }
-  if (farmQuery.isError) {
-    return <ApiErrorState error={farmQuery.error} onRetry={() => void farmQuery.refetch()} />;
-  }
-
-  const farm = farmQuery.data;
-  const currentName = name ?? farm.name;
+  const currentName = name;
 
   const saveName = async () => {
     if (currentName.trim() === farm.name) return;
@@ -111,25 +107,22 @@ function FarmEditForm({ farmId }: { farmId: string }) {
 
   return (
     <>
-      <header className="editor-page-heading">
+      <header className="editor-page-heading editor-page-heading-compact">
         <div>
           <p className="section-kicker">Boundary revision {farm.current_geometry_revision}</p>
           <h1>Edit {farm.name}</h1>
           <p>Drag a corner to move it, click an edge to add a corner, or select a corner to delete it.</p>
         </div>
-        <FarmNameInput value={currentName} onChange={(value) => { setName(value); setNameError(null); }} error={nameError} />
-        {currentName.trim() !== farm.name && (
-          <div className="name-save-row">
-            <Button
-              className="primary-button"
-              disabled={savingName || !currentName.trim()}
-              onClick={() => void saveName()}
-            >
-              {savingName ? 'Saving…' : 'Save name'}
-            </Button>
-          </div>
-        )}
       </header>
+      <FarmNameInput
+        value={currentName}
+        onChange={(value) => { setName(value); setNameError(null); }}
+        error={nameError}
+        onSave={() => void saveName()}
+        canSave={Boolean(currentName.trim()) && currentName.trim() !== farm.name}
+        isSaving={savingName}
+        saveLabel="Save name"
+      />
       <MapEditor
         key={farm.current_geometry.id}
         initialGeometry={farm.current_geometry.geometry}
@@ -161,13 +154,35 @@ function FarmEditForm({ farmId }: { farmId: string }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep this draft</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setStaleOpen(false); void farmQuery.refetch(); }}>
+            <AlertDialogAction onClick={() => { setStaleOpen(false); onReload(); }}>
               Reload latest
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+function FarmEditForm({ farmId }: { farmId: string }) {
+  const farmQuery = useQuery({
+    queryKey: ['farm', farmId],
+    queryFn: ({ signal }) => getFarm(farmId, signal),
+  });
+
+  if (farmQuery.isPending) {
+    return <section className="workspace-card loading-card"><Skeleton className="h-8 w-64" /><Skeleton className="h-96 w-full" /></section>;
+  }
+  if (farmQuery.isError) {
+    return <ApiErrorState error={farmQuery.error} onRetry={() => void farmQuery.refetch()} />;
+  }
+
+  return (
+    <FarmEditWorkspace
+      farmId={farmId}
+      farm={farmQuery.data}
+      onReload={() => void farmQuery.refetch()}
+    />
   );
 }
 
