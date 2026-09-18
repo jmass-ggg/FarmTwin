@@ -42,16 +42,16 @@ export default function Home() {
         <div className="marketing-nav page-width">
           <Brand />
           <nav className="desktop-marketing-links" aria-label="Main navigation">
-            <a href="#how-it-works">How it works</a>
-            <a href="#capabilities">Capabilities</a>
-            <Link href="/app/project">Project & architecture</Link>
+            <a href="/">Home</a>
+            <a href="#how-it-works">How It Works</a>
+            <a href="#capabilities">Features</a>
+            <Link href="/app/data-sources">About Data</Link>
           </nav>
           <div className="header-actions">
-            <span className="demo-badge"><span aria-hidden="true" /> Local development</span>
             <Button size="lg" render={<Link href="/app" />} className="primary-button header-cta">
-              Open workspace
+              Start Farm Analysis
             </Button>
-            <Button aria-label="Open workspace navigation" variant="outline" size="icon-lg" render={<Link href="/app" />} className="mobile-menu-button">
+            <Button aria-label="Open navigation menu" variant="outline" size="icon-lg" render={<Link href="/app" />} className="mobile-menu-button">
               <Menu />
             </Button>
           </div>
