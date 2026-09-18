@@ -53,8 +53,8 @@ router = APIRouter(tags=["Annual Planner"])
 
 def _entry_to_response(entry: PlanEntry) -> PlanEntryResponse:
     return PlanEntryResponse(
-        revision=entry.revision,
-        field_name=entry.field_name,
+        revision=getattr(entry, "revision", 1),
+        field_name=getattr(entry, "field_name", None),
         id=entry.id,
         farm_id=entry.farm_id,
         crop_name=entry.crop_name,

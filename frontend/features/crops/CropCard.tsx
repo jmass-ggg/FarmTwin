@@ -1,13 +1,20 @@
 import { Check, Sprout } from 'lucide-react';
 
 import type { SimulationResult } from '@/lib/api/crops';
+import avocadoImage from '@/photos/avocado.png';
+import bananaImage from '@/photos/banana.png';
 import beansImage from '@/photos/beans.png';
 import cabbageImage from '@/photos/cabbage.png';
 import carrotImage from '@/photos/carrot.png';
 import cowpeaImage from '@/photos/cowpea.png';
 import maizeImage from '@/photos/maize.png';
+import mangoImage from '@/photos/mango.png';
 import onionImage from '@/photos/onion.png';
+import orangeImage from '@/photos/orange.png';
+import papayaImage from '@/photos/papaya.png';
+import pineappleImage from '@/photos/pineapple.png';
 import riceImage from '@/photos/rice.png';
+import soybeanImage from '@/photos/soyabean.png';
 import sorghumImage from '@/photos/sorghum.png';
 import sweetPotatoImage from '@/photos/sweet_photo.png';
 import tomatoImage from '@/photos/tomatos.png';
@@ -42,8 +49,15 @@ const CROP_GLYPHS: Array<[string, string]> = [
 
 const CROP_IMAGES: Array<[string, CropImageAsset]> = [
   ['sweet potato', sweetPotatoImage],
-  ['soybean', beansImage],
-  ['soy bean', beansImage],
+  ['soybean', soybeanImage],
+  ['soyabean', soybeanImage],
+  ['soy bean', soybeanImage],
+  ['avocado', avocadoImage],
+  ['banana', bananaImage],
+  ['pineapple', pineappleImage],
+  ['papaya', papayaImage],
+  ['mango', mangoImage],
+  ['orange', orangeImage],
   ['cowpea', cowpeaImage],
   ['maize', maizeImage],
   ['corn', maizeImage],

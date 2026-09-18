@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -71,8 +71,8 @@ class _SoilPhSpec(BaseModel):
 
 
 class _RotationSpec(BaseModel):
-    preferred_after: list[str] = []
-    avoid_after: list[str] = []
+    preferred_after: list[str] = Field(default_factory=list)
+    avoid_after: list[str] = Field(default_factory=list)
 
 
 class _CropEntry(BaseModel):
@@ -81,7 +81,7 @@ class _CropEntry(BaseModel):
     category: str
     crop_type: str = "annual"
     family: str = "unknown"
-    rotation: _RotationSpec = _RotationSpec()
+    rotation: _RotationSpec = Field(default_factory=_RotationSpec)
     recovery_months: int = 0
     source_citation: str
     temperature: _TemperatureSpec

@@ -1302,6 +1302,34 @@
 .schedule-score { color: #748178; font-size: .78rem; white-space: nowrap; }
 .schedule-score b { color: #07883d; }
 
+/* Sequential annual crop plan */
+.planner-sequence-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.planner-sequence-summary span { display: flex; flex-direction: column; gap: 3px; border: 1px solid #dfe8e2; border-radius: 12px; background: #fff; color: #748179; padding: 13px 15px; font-size: .72rem; }
+.planner-sequence-summary strong { color: #173021; font-size: 1.15rem; }
+.planner-sequence-grid .planner-month-card { position: relative; overflow: visible; border-top: 3px solid #58a875; }
+.planner-sequence-grid .planner-month-card[data-stage="harvest"] { border-top-color: #d6902d; background: #fffaf1; }
+.planner-sequence-grid .planner-month-card[data-stage="recovery"] { border-top-color: #8c9a92; background: #f4f7f5; }
+.planner-sequence-grid .planner-month-card[data-stage="growing"],
+.planner-sequence-grid .planner-month-card[data-stage="flowering"],
+.planner-sequence-grid .planner-month-card[data-stage="maturing"] { background: #f5fbf7; }
+.planner-stage-badge { display: inline-flex; width: fit-content; border-radius: 999px; background: #e4f7ea; color: #08743a; padding: 4px 8px; font-size: .62rem; font-weight: 760; letter-spacing: .05em; text-transform: uppercase; }
+.planner-stage-badge[data-stage="harvest"] { background: #fff0d8; color: #a35f08; }
+.planner-stage-badge[data-stage="recovery"] { background: #edf1ee; color: #64736a; }
+.planner-month-info small { color: #718078; font-size: .62rem; }
+.planner-sequence-empty { display: grid; min-height: 220px; place-items: center; border: 1px dashed #cad8ce; border-radius: 14px; color: #748178; font-size: .82rem; }
+.planner-perennial-section { padding: 22px; }
+.planner-perennial-section h2 { margin: 3px 0 5px; color: #1b3023; font-size: 1.05rem; }
+.planner-perennial-section > p:not(.section-kicker) { margin: 0; color: #748178; font-size: .76rem; }
+.planner-perennial-section > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 16px; }
+.planner-perennial-section article { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 2px 10px; border: 1px solid #e0e8e2; border-radius: 11px; padding: 10px; }
+.planner-perennial-section article .crop-visual { grid-row: 1 / 3; width: 42px; height: 42px; }
+.planner-perennial-section article strong { color: #26392e; font-size: .8rem; }
+.planner-perennial-section article span { color: #75827a; font-size: .66rem; }
+
+@media (max-width: 760px) {
+  .planner-sequence-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* Change proposal dialog (Task 5.4) */
 .proposal-dialog-content { max-width: 480px !important; }
 .proposal-list { display: flex; flex-direction: column; gap: 14px; max-height: 420px; overflow-y: auto; }

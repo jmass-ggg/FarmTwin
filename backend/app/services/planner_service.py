@@ -190,13 +190,16 @@ def _build_annual_sequence(
         season_id = f"{crop.name.lower().replace(' ', '-')}-{season_counts[crop.name]}"
         harvest_month = month + crop.duration_months - 1
         continues = harvest_month > 12
-        rotation_sentence = {
-            "preferred": f" It provides a preferred rotation after {previous.name}.",
-            "avoid": f" Rotation after {previous.name} carries a planning penalty.",
-            "same-crop penalty": " Repeating the same crop carries a strong rotation penalty.",
-            "same-family penalty": f" Following {previous.name} in the same family carries a rotation penalty.",
-            "neutral": "",
-        }[effect]
+        if effect == "preferred" and previous:
+            rotation_sentence = f" It provides a preferred rotation after {previous.name}."
+        elif effect == "avoid" and previous:
+            rotation_sentence = f" Rotation after {previous.name} carries a planning penalty."
+        elif effect == "same-crop penalty":
+            rotation_sentence = " Repeating the same crop carries a strong rotation penalty."
+        elif effect == "same-family penalty" and previous:
+            rotation_sentence = f" Following {previous.name} in the same family carries a rotation penalty."
+        else:
+            rotation_sentence = ""
         explanation = f"{crop.name} is suitable for {calendar.month_name[month]} conditions.{rotation_sentence}"
         context = context_for(month, crop)
 

@@ -115,10 +115,36 @@ function makeAnnualPlanResponse(
   entries: import('@/lib/api/planner').PlanEntryResponse[] = [],
   proposals: import('@/lib/api/planner').ChangeProposalResponse[] = [],
 ): import('@/lib/api/planner').AnnualPlanResponse {
+  const timeline: import('@/lib/api/planner').PlanTimelineItem[] = Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    const offset = index % 4;
+    return {
+      month,
+      month_name: MONTH_NAMES[index],
+      crop_name: 'Maize',
+      stage: offset === 0 ? 'planting' : offset === 3 ? 'harvest' : offset === 2 ? 'maturing' : 'growing',
+      action: offset === 0 ? 'plant' : offset === 3 ? 'harvest' : 'continue',
+      season_id: `maize-${Math.floor(index / 4) + 1}`,
+      suitability_index: offset === 0 ? 85 : null,
+      planning_score: offset === 0 ? 85 : null,
+      plant_month: month - offset,
+      harvest_month: month - offset + 3,
+      duration_months: 4,
+      previous_crop: null,
+      rotation_effect: 'neutral',
+      reason: offset === 0 ? 'Maize is suitable now.' : null,
+      limiting_factor: offset === 0 ? 'water' : null,
+      continues_next_year: false,
+      data_mode: 'demonstration',
+      snapshot_id: null,
+    };
+  });
   return {
     farm_id: 'farm-001',
     year: new Date().getFullYear(),
     months: [],
+    timeline,
+    perennial_opportunities: [],
     entries,
     proposals,
   };
