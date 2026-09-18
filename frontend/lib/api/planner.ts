@@ -54,8 +54,45 @@ export interface AnnualPlanResponse {
   farm_id: string;
   year: number;
   months: MonthRecommendationResponse[];
+  timeline: PlanTimelineItem[];
+  perennial_opportunities: PerennialOpportunity[];
   entries: PlanEntryResponse[];
   proposals: ChangeProposalResponse[];
+}
+
+export interface PlanTimelineItem {
+  month: number;
+  month_name: string;
+  crop_name: string | null;
+  stage: 'planting' | 'growing' | 'flowering' | 'maturing' | 'harvest' | 'recovery';
+  action: 'plant' | 'continue' | 'harvest' | 'recover';
+  season_id: string | null;
+  suitability_index: number | null;
+  planning_score: number | null;
+  plant_month: number | null;
+  harvest_month: number | null;
+  duration_months: number | null;
+  previous_crop: string | null;
+  rotation_effect: string | null;
+  reason: string | null;
+  limiting_factor: string | null;
+  continues_next_year: boolean;
+  data_mode: string;
+  snapshot_id: string | null;
+}
+
+export interface PerennialOpportunity {
+  crop_name: string;
+  suitability_index: number;
+  label: string;
+  limiting_factor: string;
+  reason: string;
+}
+
+export interface AnnualPlanScenario {
+  rainfall_change_pct?: number;
+  temperature_change_c?: number;
+  irrigation_mm?: number | null;
 }
 
 export interface PlanEntryCreate {
@@ -107,12 +144,17 @@ function mapPlannerError(error: unknown): never {
 export async function getAnnualPlan(
   farmId: string,
   year: number,
+  scenario: AnnualPlanScenario = {},
   signal?: AbortSignal,
 ): Promise<AnnualPlanResponse> {
   try {
+    const params = new URLSearchParams({ year: String(year) });
+    if (scenario.rainfall_change_pct) params.set('rainfall_change_pct', String(scenario.rainfall_change_pct));
+    if (scenario.temperature_change_c) params.set('temperature_change_c', String(scenario.temperature_change_c));
+    if (scenario.irrigation_mm != null) params.set('irrigation_mm', String(scenario.irrigation_mm));
     return (
       await requestApi<AnnualPlanResponse>(
-        `/api/v1/farms/${encodeURIComponent(farmId)}/crop-plan?year=${year}`,
+        `/api/v1/farms/${encodeURIComponent(farmId)}/crop-plan?${params.toString()}`,
         { signal },
       )
     ).data;

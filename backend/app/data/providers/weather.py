@@ -47,6 +47,7 @@ CURRENT_VARIABLES = [
     "wind_speed_10m",
     "wind_direction_10m",
     "cloud_cover",
+    "weather_code",
 ]
 
 # Unit mapping: variable name → (unit string, description)
@@ -57,6 +58,7 @@ _UNITS: dict[str, str] = {
     "wind_speed_10m": "m/s",
     "wind_direction_10m": "degrees",
     "cloud_cover": "percent",
+    "weather_code": "wmo code",
 }
 
 # Retry config for transient server errors (5xx, 429)
@@ -166,7 +168,7 @@ async def fetch(
         "longitude": centroid_lon,
         "current": ",".join(CURRENT_VARIABLES),
         "hourly": ",".join(CURRENT_VARIABLES),
-        "daily": "temperature_2m_min,temperature_2m_max,temperature_2m_mean,precipitation_sum,wind_speed_10m_max",
+        "daily": "temperature_2m_min,temperature_2m_max,temperature_2m_mean,precipitation_sum,wind_speed_10m_max,weather_code",
         "wind_speed_unit": "ms",
         "forecast_days": 7,
         "timezone": "UTC",

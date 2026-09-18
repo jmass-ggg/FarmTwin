@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import calendar
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
+from typing import Callable
 from uuid import UUID
 
 from geoalchemy2.shape import to_shape
@@ -22,7 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import FarmValidationError, NotFoundError
 from app.core.security import Principal
 from app.domain.crop_engine import ENGINE_VERSION, rank_all, score
-from app.domain.crop_register import CROP_REGISTER
+from app.domain.crop_register import CROP_REGISTER, CropRequirements
+from app.domain.snapshot_context import SnapshotContext
 from app.domain.snapshot_context import context_from_demonstration, context_from_snapshot, with_irrigation
 from app.core.config import Settings
 from app.models.farm import Farm
@@ -58,6 +60,8 @@ class AnnualPlanResponse:
     months: list[MonthRecommendation]  # exactly 12
     entries: list[PlanEntry]
     proposals: list[ChangeProposal]
+    timeline: list["TimelineItem"] = field(default_factory=list)
+    perennial_opportunities: list["PerennialOpportunity"] = field(default_factory=list)
 
 
 @dataclass
@@ -82,6 +86,174 @@ class PlanEntryUpdate:
     area_ha: float | None = None
     field_name: str | None = None
     expected_revision: int | None = None
+
+
+@dataclass(frozen=True)
+class TimelineItem:
+    month: int
+    month_name: str
+    crop_name: str | None
+    stage: str
+    action: str
+    season_id: str | None
+    suitability_index: int | None = None
+    planning_score: int | None = None
+    plant_month: int | None = None
+    harvest_month: int | None = None
+    duration_months: int | None = None
+    previous_crop: str | None = None
+    rotation_effect: str | None = None
+    reason: str | None = None
+    limiting_factor: str | None = None
+    continues_next_year: bool = False
+    data_mode: str = "demonstration"
+    snapshot_id: str | None = None
+
+
+@dataclass(frozen=True)
+class PerennialOpportunity:
+    crop_name: str
+    suitability_index: int
+    label: str
+    limiting_factor: str
+    reason: str
+
+
+PREFERRED_ROTATION_BONUS = 10
+AVOID_ROTATION_PENALTY = -15
+SAME_CROP_PENALTY = -20
+SAME_FAMILY_PENALTY = -8
+
+
+def _stage_for_month(offset: int, duration: int) -> str:
+    """Return one deterministic planning stage for a zero-based crop month."""
+    if offset == 0:
+        return "planting"
+    if offset == duration - 1:
+        return "harvest"
+    if duration == 3:
+        return "growing"
+    if duration == 4:
+        return "growing" if offset == 1 else "maturing"
+    if duration >= 5 and offset == duration - 2:
+        return "maturing"
+    if duration >= 5 and offset == max(2, duration // 2):
+        return "flowering"
+    return "growing"
+
+
+def _rotation_adjustment(
+    crop: CropRequirements,
+    previous: CropRequirements | None,
+) -> tuple[int, str]:
+    if previous is None:
+        return 0, "neutral"
+    if crop.name == previous.name:
+        return SAME_CROP_PENALTY, "same-crop penalty"
+    if previous.name in crop.avoid_after:
+        return AVOID_ROTATION_PENALTY, "avoid"
+    if previous.name in crop.preferred_after:
+        return PREFERRED_ROTATION_BONUS, "preferred"
+    if crop.family != "unknown" and crop.family == previous.family:
+        return SAME_FAMILY_PENALTY, "same-family penalty"
+    return 0, "neutral"
+
+
+def _build_annual_sequence(
+    crops: tuple[CropRequirements, ...],
+    context_for: Callable[[int, CropRequirements], SnapshotContext],
+) -> tuple[list[TimelineItem], list[PerennialOpportunity]]:
+    """Build one occupancy-aware January–December field sequence."""
+    annuals = tuple(crop for crop in crops if crop.crop_type == "annual")
+    perennials = tuple(crop for crop in crops if crop.crop_type == "perennial")
+    timeline: list[TimelineItem] = []
+    previous: CropRequirements | None = None
+    season_counts: dict[str, int] = {}
+    month = 1
+
+    while month <= 12 and annuals:
+        candidates = []
+        for crop in annuals:
+            result = score(crop, context_for(month, crop))
+            if result.suitability_index is None or result.hard_exclusion:
+                continue
+            adjustment, effect = _rotation_adjustment(crop, previous)
+            planning_score = max(0, min(100, result.suitability_index + adjustment))
+            candidates.append((planning_score, result.suitability_index, crop.name, crop, result, effect))
+        if not candidates:
+            break
+
+        _, suitability, _, crop, result, effect = max(candidates, key=lambda item: (item[0], item[1], item[2]))
+        adjustment, _ = _rotation_adjustment(crop, previous)
+        planning_score = max(0, min(100, suitability + adjustment))
+        season_counts[crop.name] = season_counts.get(crop.name, 0) + 1
+        season_id = f"{crop.name.lower().replace(' ', '-')}-{season_counts[crop.name]}"
+        harvest_month = month + crop.duration_months - 1
+        continues = harvest_month > 12
+        rotation_sentence = {
+            "preferred": f" It provides a preferred rotation after {previous.name}.",
+            "avoid": f" Rotation after {previous.name} carries a planning penalty.",
+            "same-crop penalty": " Repeating the same crop carries a strong rotation penalty.",
+            "same-family penalty": f" Following {previous.name} in the same family carries a rotation penalty.",
+            "neutral": "",
+        }[effect]
+        explanation = f"{crop.name} is suitable for {calendar.month_name[month]} conditions.{rotation_sentence}"
+        context = context_for(month, crop)
+
+        for offset in range(crop.duration_months):
+            occupied_month = month + offset
+            if occupied_month > 12:
+                break
+            stage = _stage_for_month(offset, crop.duration_months)
+            timeline.append(TimelineItem(
+                month=occupied_month,
+                month_name=calendar.month_name[occupied_month],
+                crop_name=crop.name,
+                stage=stage,
+                action="plant" if stage == "planting" else "harvest" if stage == "harvest" else "continue",
+                season_id=season_id,
+                suitability_index=suitability if stage == "planting" else None,
+                planning_score=planning_score if stage == "planting" else None,
+                plant_month=month,
+                harvest_month=harvest_month if harvest_month <= 12 else None,
+                duration_months=crop.duration_months,
+                previous_crop=previous.name if previous else None,
+                rotation_effect=effect,
+                reason=explanation if stage == "planting" else None,
+                limiting_factor=result.limiting_factor if stage == "planting" else None,
+                continues_next_year=continues,
+                data_mode=context.data_mode,
+                snapshot_id=context.snapshot_id,
+            ))
+
+        month += crop.duration_months
+        for _ in range(crop.recovery_months):
+            if month > 12:
+                break
+            timeline.append(TimelineItem(
+                month=month,
+                month_name=calendar.month_name[month],
+                crop_name=None,
+                stage="recovery",
+                action="recover",
+                season_id=None,
+            ))
+            month += 1
+        previous = crop
+
+    opportunities = []
+    for crop in perennials:
+        result = score(crop, context_for(1, crop))
+        if result.suitability_index is not None and not result.hard_exclusion:
+            opportunities.append(PerennialOpportunity(
+                crop_name=crop.name,
+                suitability_index=result.suitability_index,
+                label=result.label,
+                limiting_factor=result.limiting_factor,
+                reason=result.reason,
+            ))
+    opportunities.sort(key=lambda item: (-item.suitability_index, item.crop_name))
+    return timeline, opportunities
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +361,9 @@ async def get_annual_plan(
     principal: Principal,
     farm_id: UUID,
     year: int,
+    rainfall_change_pct: float = 0,
+    temperature_change_c: float = 0,
+    irrigation_mm: float | None = None,
 ) -> AnnualPlanResponse:
     """
     Build the annual plan response.
@@ -203,24 +378,53 @@ async def get_annual_plan(
     Requirements: 1.1, 1.2, 1.3, 1.4
     """
     farm = await _fetch_farm(session, principal, farm_id)
-    centroid = to_shape(farm.current_geometry.centroid)
-
     # Attempt to load latest snapshot (shared across all 12 months)
     snapshot = await _load_latest_snapshot(
         session, farm.id, farm.current_geometry_revision
     )
 
+    def context_for(month: int, crop: CropRequirements) -> SnapshotContext:
+        context = _context(
+            farm,
+            snapshot,
+            date(year, month, 1),
+            crop,
+            "irrigated" if irrigation_mm is not None else "rain_fed",
+            irrigation_mm,
+        )
+        rainfall = context.rainfall_total_mm
+        return replace(
+            context,
+            temperature_mean_c=(
+                context.temperature_mean_c + temperature_change_c
+                if context.temperature_mean_c is not None else None
+            ),
+            rainfall_total_mm=(
+                rainfall * (1 + rainfall_change_pct / 100)
+                if rainfall is not None else None
+            ),
+        )
+
+    timeline, perennial_opportunities = _build_annual_sequence(CROP_REGISTER, context_for)
+    timeline_by_month = {item.month: item for item in timeline}
     months = []
     for month in range(1, 13):
-        ranked = []
-        for crop in CROP_REGISTER:
-            context = _context(farm, snapshot, date(year, month, 1), crop)
-            ranked.append(score(crop, context))
-        ranked.sort(key=lambda r: (-(r.suitability_index if r.suitability_index is not None else -1), r.crop_name))
-        top3 = [dict(crop_name=r.crop_name, suitability_index=r.suitability_index,
-                     label=r.label, limiting_factor=r.limiting_factor, reason=r.reason)
-                for r in ranked if r.suitability_index is not None][:3]
-        months.append(MonthRecommendation(month, calendar.month_name[month], context.data_mode, context.snapshot_id, top3))
+        item = timeline_by_month.get(month)
+        recommendations = [] if item is None or item.crop_name is None else [{
+            "crop_name": item.crop_name,
+            "suitability_index": item.suitability_index,
+            "label": item.stage.title(),
+            "limiting_factor": item.limiting_factor,
+            "reason": item.reason,
+            "season_id": item.season_id,
+        }]
+        months.append(MonthRecommendation(
+            month=month,
+            month_name=calendar.month_name[month],
+            data_mode=item.data_mode if item else "unavailable",
+            snapshot_id=item.snapshot_id if item else None,
+            recommendations=recommendations,
+        ))
 
     # Load saved entries for this farm and year
     entries_result = await session.execute(
@@ -253,6 +457,8 @@ async def get_annual_plan(
         farm_id=str(farm.id),
         year=year,
         months=months,
+        timeline=timeline,
+        perennial_opportunities=perennial_opportunities,
         entries=year_entries,
         proposals=proposals,
     )

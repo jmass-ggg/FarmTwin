@@ -32,6 +32,8 @@ from app.api.v1.planner_schemas import (
     PlanEntryUpdate,
     PlanExportResponse,
     MonthRecommendationResponse,
+    PerennialOpportunityResponse,
+    TimelineItemResponse,
 )
 from app.core.security import Principal
 from app.models.plan import ChangeProposal, PlanEntry
@@ -108,6 +110,9 @@ def _proposal_to_response(proposal: ChangeProposal) -> ChangeProposalResponse:
 async def get_annual_plan(
     farm_id: UUID,
     year: int = Query(description="Calendar year", ge=1900, le=2100),
+    rainfall_change_pct: float = Query(default=0, ge=-50, le=50),
+    temperature_change_c: float = Query(default=0, ge=-5, le=5),
+    irrigation_mm: float | None = Query(default=None, ge=0),
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_request_session),
 ) -> AnnualPlanResponse:
@@ -116,6 +121,9 @@ async def get_annual_plan(
         principal=principal,
         farm_id=farm_id,
         year=year,
+        rainfall_change_pct=rainfall_change_pct,
+        temperature_change_c=temperature_change_c,
+        irrigation_mm=irrigation_mm,
     )
 
     months = [
@@ -133,6 +141,11 @@ async def get_annual_plan(
         farm_id=result.farm_id,
         year=result.year,
         months=months,
+        timeline=[TimelineItemResponse(**item.__dict__) for item in result.timeline],
+        perennial_opportunities=[
+            PerennialOpportunityResponse(**item.__dict__)
+            for item in result.perennial_opportunities
+        ],
         entries=[_entry_to_response(e) for e in result.entries],
         proposals=[_proposal_to_response(p) for p in result.proposals],
     )

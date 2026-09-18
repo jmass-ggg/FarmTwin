@@ -70,10 +70,19 @@ class _SoilPhSpec(BaseModel):
         return self
 
 
+class _RotationSpec(BaseModel):
+    preferred_after: list[str] = []
+    avoid_after: list[str] = []
+
+
 class _CropEntry(BaseModel):
     name: str
     data_version: str
     category: str
+    crop_type: str = "annual"
+    family: str = "unknown"
+    rotation: _RotationSpec = _RotationSpec()
+    recovery_months: int = 0
     source_citation: str
     temperature: _TemperatureSpec
     rainfall_per_duration_mm: _RainfallSpec
@@ -100,9 +109,23 @@ class _CropEntry(BaseModel):
     @field_validator("category")
     @classmethod
     def validate_category(cls, v: str) -> str:
-        allowed = {"cereal", "legume", "vegetable", "root"}
+        allowed = {"cereal", "legume", "vegetable", "root", "fruit"}
         if v not in allowed:
             raise ValueError(f"category must be one of {allowed}, got {v!r}")
+        return v
+
+    @field_validator("crop_type")
+    @classmethod
+    def validate_crop_type(cls, v: str) -> str:
+        if v not in {"annual", "perennial"}:
+            raise ValueError(f"crop_type must be annual or perennial, got {v!r}")
+        return v
+
+    @field_validator("recovery_months")
+    @classmethod
+    def validate_recovery_months(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(f"recovery_months must be >= 0, got {v}")
         return v
 
 
@@ -127,7 +150,7 @@ class CropRequirements:
 
     name: str
     data_version: str
-    category: str                           # cereal | legume | vegetable | root
+    category: str                           # cereal | legume | vegetable | root | fruit
     source_citation: str
 
     # Temperature (°C)
@@ -150,6 +173,13 @@ class CropRequirements:
 
     # Duration
     duration_months: int
+
+    # Annual planning
+    crop_type: str = "annual"
+    family: str = "unknown"
+    preferred_after: tuple[str, ...] = ()
+    avoid_after: tuple[str, ...] = ()
+    recovery_months: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +243,11 @@ def load_register(
             drought_tolerance=entry.drought_tolerance,
             heat_tolerance_ceiling_c=entry.heat_tolerance_ceiling_c,
             duration_months=entry.duration_months,
+            crop_type=entry.crop_type,
+            family=entry.family,
+            preferred_after=tuple(entry.rotation.preferred_after),
+            avoid_after=tuple(entry.rotation.avoid_after),
+            recovery_months=entry.recovery_months,
         )
         for entry in register_file.crops
     )

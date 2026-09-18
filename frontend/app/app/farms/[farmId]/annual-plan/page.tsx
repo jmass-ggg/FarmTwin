@@ -414,7 +414,7 @@ export default function AnnualPlanPage() {
   const [draftRainfall, setDraftRainfall] = useState(0);
   const [draftTemperature, setDraftTemperature] = useState(0);
   const [draftIrrigationMm, setDraftIrrigationMm] = useState('');
-  const [scenario, setScenario] = useState({ rainfall: 0, temperature: 0 });
+  const [scenario, setScenario] = useState<{ rainfall: number; temperature: number; irrigation: number | null }>({ rainfall: 0, temperature: 0, irrigation: null });
   const [addToPlanOpen, setAddToPlanOpen] = useState(false);
   const [addToPlanCrop, setAddToPlanCrop] = useState<{ name: string; monthNumber: number; monthName: string } | null>(null);
 
@@ -464,8 +464,12 @@ export default function AnnualPlanPage() {
   });
 
   const cropPlan = useQuery({
-    queryKey: ['crop-plan', farmId, year],
-    queryFn: ({ signal }) => getAnnualPlan(farmId, year, signal),
+    queryKey: ['crop-plan', farmId, year, scenario.rainfall, scenario.temperature, scenario.irrigation],
+    queryFn: ({ signal }) => getAnnualPlan(farmId, year, {
+      rainfall_change_pct: scenario.rainfall,
+      temperature_change_c: scenario.temperature,
+      irrigation_mm: scenario.irrigation,
+    }, signal),
   });
 
   const invalidatePlan = () => {
@@ -501,17 +505,17 @@ export default function AnnualPlanPage() {
           irrigation_mm_override: draftIrrigationMm !== '' ? parseFloat(draftIrrigationMm) : null,
         });
         setScenarioResult({ crops: result.crops, hazards: result.hazards });
-        setScenario({ rainfall: draftRainfall, temperature: draftTemperature });
+        setScenario({ rainfall: draftRainfall, temperature: draftTemperature, irrigation: draftIrrigationMm !== '' ? parseFloat(draftIrrigationMm) : null });
       } catch {
         // fall through to demo engine on error
-        setScenario({ rainfall: draftRainfall, temperature: draftTemperature });
+        setScenario({ rainfall: draftRainfall, temperature: draftTemperature, irrigation: draftIrrigationMm !== '' ? parseFloat(draftIrrigationMm) : null });
       } finally {
         setScenarioBusy(false);
       }
     } else {
       // Demo engine path — just pass params to decision-support query
       setScenarioResult(null);
-      setScenario({ rainfall: draftRainfall, temperature: draftTemperature });
+      setScenario({ rainfall: draftRainfall, temperature: draftTemperature, irrigation: draftIrrigationMm !== '' ? parseFloat(draftIrrigationMm) : null });
     }
   };
 
@@ -519,7 +523,7 @@ export default function AnnualPlanPage() {
     setDraftRainfall(0);
     setDraftTemperature(0);
     setDraftIrrigationMm('');
-    setScenario({ rainfall: 0, temperature: 0 });
+    setScenario({ rainfall: 0, temperature: 0, irrigation: null });
     setScenarioResult(null);
   };
 
@@ -529,6 +533,11 @@ export default function AnnualPlanPage() {
   };
 
   const selectedRecommendation = plan.data?.selected_month.recommendations[0] ?? null;
+  const timeline = cropPlan.data?.timeline ?? [];
+  const selectedActivity = timeline.find((item) => item.month === month) ?? null;
+  const plannedCrops = new Set(timeline.filter((item) => item.stage === 'planting').map((item) => item.season_id)).size;
+  const harvests = timeline.filter((item) => item.stage === 'harvest').length;
+  const recoveryPeriods = timeline.filter((item) => item.stage === 'recovery').length;
 
   return (
     <div className="decision-page content-stack">

@@ -27,10 +27,34 @@ export interface WeatherPayload {
   wind_speed_10m: EnvironmentalValue | null;
   wind_direction_10m: EnvironmentalValue | null;
   cloud_cover: EnvironmentalValue | null;
+  weather_code?: EnvironmentalValue | null;
+  hourly?: WeatherHourlyForecast;
+  daily?: WeatherDailyForecast;
   model_name?: string;
   issue_time?: string;
   valid_time?: string;
   forecast_horizon_hours?: number;
+}
+
+export interface WeatherHourlyForecast {
+  time: string[];
+  temperature_2m: Array<number | null>;
+  precipitation: Array<number | null>;
+  relative_humidity_2m: Array<number | null>;
+  wind_speed_10m: Array<number | null>;
+  wind_direction_10m: Array<number | null>;
+  cloud_cover: Array<number | null>;
+  weather_code: Array<number | null>;
+}
+
+export interface WeatherDailyForecast {
+  time: string[];
+  temperature_2m_min: Array<number | null>;
+  temperature_2m_max: Array<number | null>;
+  temperature_2m_mean: Array<number | null>;
+  precipitation_sum: Array<number | null>;
+  wind_speed_10m_max: Array<number | null>;
+  weather_code: Array<number | null>;
 }
 
 export interface SatellitePayload {
@@ -84,6 +108,10 @@ export interface ClimateBaselinePayload {
   baseline_period: string | null;
   temperature_anomaly: EnvironmentalValue | null;
   rainfall_anomaly: EnvironmentalValue | null;
+  all_monthly_means?: {
+    temperature_2m_mean: Record<string, number | null>;
+    precipitation_sum: Record<string, number | null>;
+  };
 }
 
 export interface JobStage {
@@ -138,6 +166,47 @@ function envelope(value: unknown): EnvironmentalValue | null {
     : null;
 }
 
+function numberArray(value: unknown): Array<number | null> {
+  return Array.isArray(value)
+    ? value.map((item) => typeof item === 'number' && Number.isFinite(item) ? item : null)
+    : [];
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function normaliseHourly(value: unknown): WeatherHourlyForecast | undefined {
+  const hourly = record(value);
+  if (!hourly) return undefined;
+  return {
+    time: stringArray(hourly.time),
+    temperature_2m: numberArray(hourly.temperature_2m),
+    precipitation: numberArray(hourly.precipitation),
+    relative_humidity_2m: numberArray(hourly.relative_humidity_2m),
+    wind_speed_10m: numberArray(hourly.wind_speed_10m),
+    wind_direction_10m: numberArray(hourly.wind_direction_10m),
+    cloud_cover: numberArray(hourly.cloud_cover),
+    weather_code: numberArray(hourly.weather_code),
+  };
+}
+
+function normaliseDaily(value: unknown): WeatherDailyForecast | undefined {
+  const daily = record(value);
+  if (!daily) return undefined;
+  return {
+    time: stringArray(daily.time),
+    temperature_2m_min: numberArray(daily.temperature_2m_min),
+    temperature_2m_max: numberArray(daily.temperature_2m_max),
+    temperature_2m_mean: numberArray(daily.temperature_2m_mean),
+    precipitation_sum: numberArray(daily.precipitation_sum),
+    wind_speed_10m_max: numberArray(daily.wind_speed_10m_max),
+    weather_code: numberArray(daily.weather_code),
+  };
+}
+
 function normaliseWeather(value: unknown): WeatherPayload | null {
   const payload = record(value);
   if (!payload) return null;
@@ -150,6 +219,9 @@ function normaliseWeather(value: unknown): WeatherPayload | null {
     wind_speed_10m: envelope(fields.wind_speed_10m),
     wind_direction_10m: envelope(fields.wind_direction_10m),
     cloud_cover: envelope(fields.cloud_cover),
+    weather_code: envelope(fields.weather_code),
+    hourly: normaliseHourly(payload.hourly),
+    daily: normaliseDaily(payload.daily),
     model_name: typeof metadata?.source === 'string' ? metadata.source : undefined,
     issue_time: typeof metadata?.issue_time === 'string' ? metadata.issue_time : undefined,
     valid_time: typeof metadata?.valid_time === 'string' ? metadata.valid_time : undefined,
@@ -225,11 +297,26 @@ function normaliseClimate(value: unknown): ClimateBaselinePayload | null {
   if (!payload) return null;
   const temperature = record(payload.temperature_2m_mean);
   const rainfall = record(payload.precipitation_sum);
+  const monthly = record(payload.all_monthly_means);
+  const monthlyTemperature = record(monthly?.temperature_2m_mean);
+  const monthlyRainfall = record(monthly?.precipitation_sum);
+  const monthlyRecord = (source: UnknownRecord | null): Record<string, number | null> =>
+    Object.fromEntries(
+      Array.from({ length: 12 }, (_, index) => {
+        const key = String(index + 1);
+        const item = source?.[key];
+        return [key, typeof item === 'number' && Number.isFinite(item) ? item : null];
+      }),
+    );
   return {
     baseline_source: typeof payload.baseline_source === 'string' ? payload.baseline_source : null,
     baseline_period: typeof payload.baseline_period === 'string' ? payload.baseline_period : null,
     temperature_anomaly: envelope(temperature?.anomaly ?? payload.temperature_anomaly),
     rainfall_anomaly: envelope(rainfall?.anomaly ?? payload.rainfall_anomaly),
+    all_monthly_means: monthly ? {
+      temperature_2m_mean: monthlyRecord(monthlyTemperature),
+      precipitation_sum: monthlyRecord(monthlyRainfall),
+    } : undefined,
   };
 }
 

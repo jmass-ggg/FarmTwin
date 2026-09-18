@@ -179,6 +179,35 @@ class ChangeProposalResponse(ReadBaseSchema):
     created_at: datetime = Field(description="UTC timestamp when this proposal was created")
 
 
+class TimelineItemResponse(ReadBaseSchema):
+    month: int = Field(ge=1, le=12)
+    month_name: str
+    crop_name: str | None
+    stage: str
+    action: str
+    season_id: str | None
+    suitability_index: int | None = Field(default=None, ge=0, le=100)
+    planning_score: int | None = Field(default=None, ge=0, le=100)
+    plant_month: int | None = Field(default=None, ge=1, le=12)
+    harvest_month: int | None = Field(default=None, ge=1, le=12)
+    duration_months: int | None = Field(default=None, ge=1)
+    previous_crop: str | None = None
+    rotation_effect: str | None = None
+    reason: str | None = None
+    limiting_factor: str | None = None
+    continues_next_year: bool = False
+    data_mode: str
+    snapshot_id: str | None = None
+
+
+class PerennialOpportunityResponse(ReadBaseSchema):
+    crop_name: str
+    suitability_index: int = Field(ge=0, le=100)
+    label: str
+    limiting_factor: str
+    reason: str
+
+
 class AnnualPlanResponse(ReadBaseSchema):
     """
     Response for GET /api/v1/farms/{farm_id}/crop-plan.
@@ -193,6 +222,14 @@ class AnnualPlanResponse(ReadBaseSchema):
     year: int = Field(description="Calendar year for the plan")
     months: list[MonthRecommendationResponse] = Field(
         description="12 monthly recommendation records (one per calendar month)"
+    )
+    timeline: list[TimelineItemResponse] = Field(
+        default_factory=list,
+        description="Sequential occupancy-aware field activity for the year"
+    )
+    perennial_opportunities: list[PerennialOpportunityResponse] = Field(
+        default_factory=list,
+        description="Long-term crops excluded from the annual rotation"
     )
     entries: list[PlanEntryResponse] = Field(
         description="Saved Plan_Entries for this farm and year"

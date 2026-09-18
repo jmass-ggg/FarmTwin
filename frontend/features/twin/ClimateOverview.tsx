@@ -1,356 +1,286 @@
 'use client';
 
-import { Cloud, CloudRain, Sun, ThermometerSun, Wind } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import {
+  Cloud,
+  CloudDrizzle,
+  CloudFog,
+  CloudLightning,
+  CloudRain,
+  CloudSun,
+  Droplets,
+  ExternalLink,
+  Info,
+  Snowflake,
+  Sun,
+  ThermometerSun,
+  Wind,
+} from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 
 import type {
   ClimateBaselinePayload,
   EnvironmentalValue,
   SatellitePayload,
+  WeatherDailyForecast,
   WeatherPayload,
 } from '@/lib/api/farms';
 
-type ClimateTab = 'current' | '7days' | 'monthly' | 'annual';
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-const TAB_LABELS: { id: ClimateTab; label: string }[] = [
-  { id: 'current', label: 'Current' },
-  { id: '7days', label: 'Next 7 Days' },
-  { id: 'monthly', label: 'Monthly' },
-  { id: 'annual', label: 'Annual' },
-];
+type WeatherSeverity = 'normal' | 'rain' | 'warning';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatAcquiredAt(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    });
-  } catch {
-    return iso;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Metric row — a single labelled environmental value with provenance
-// ---------------------------------------------------------------------------
-
-interface MetricRowProps {
+interface WeatherCondition {
   label: string;
-  value: EnvironmentalValue | null | undefined;
+  icon: LucideIcon;
+  severity: WeatherSeverity;
 }
 
-function MetricRow({ label, value }: MetricRowProps) {
+function weatherCondition(code: number | null | undefined): WeatherCondition {
+  if (code === 0) return { label: 'Clear', icon: Sun, severity: 'normal' };
+  if (code === 1) return { label: 'Mainly Clear', icon: CloudSun, severity: 'normal' };
+  if (code === 2) return { label: 'Partly Cloudy', icon: CloudSun, severity: 'normal' };
+  if (code === 3) return { label: 'Overcast', icon: Cloud, severity: 'normal' };
+  if (code === 45 || code === 48) return { label: 'Fog', icon: CloudFog, severity: 'normal' };
+  if ([51, 53, 55].includes(code ?? -1)) return { label: 'Drizzle', icon: CloudDrizzle, severity: 'rain' };
+  if ([56, 57].includes(code ?? -1)) return { label: 'Freezing Drizzle', icon: CloudDrizzle, severity: 'warning' };
+  if ([61, 63, 65].includes(code ?? -1)) return { label: 'Rain', icon: CloudRain, severity: 'rain' };
+  if ([66, 67].includes(code ?? -1)) return { label: 'Freezing Rain', icon: CloudRain, severity: 'warning' };
+  if ([71, 73, 75, 77, 85, 86].includes(code ?? -1)) return { label: code === 77 ? 'Snow Grains' : 'Snow', icon: Snowflake, severity: 'warning' };
+  if ([80, 81, 82].includes(code ?? -1)) return { label: 'Rain Showers', icon: CloudRain, severity: 'rain' };
+  if (code === 95) return { label: 'Thunderstorm', icon: CloudLightning, severity: 'warning' };
+  if (code === 96 || code === 99) return { label: 'Thunderstorm with Hail', icon: CloudLightning, severity: 'warning' };
+  return { label: 'Conditions unavailable', icon: Cloud, severity: 'normal' };
+}
+
+function precipitationSeverity(amount: number | null | undefined): WeatherSeverity {
+  if (amount === null || amount === undefined) return 'normal';
+  if (amount >= 20) return 'warning';
+  if (amount >= 0.5) return 'rain';
+  return 'normal';
+}
+
+/** Interface indicator only; it is not a medical heat-index assessment. */
+function heatStress(temperature: number | null, humidity: number | null): 'Low' | 'Moderate' | 'High' | '—' {
+  if (temperature === null || humidity === null) return '—';
+  if (temperature >= 32 || (temperature >= 29 && humidity >= 70)) return 'High';
+  if (temperature >= 27 || (temperature >= 25 && humidity >= 80)) return 'Moderate';
+  return 'Low';
+}
+
+function valueOf(value: EnvironmentalValue | null | undefined): number | null {
+  return value?.value !== null && value?.value !== undefined ? value.value : null;
+}
+
+function formatNumber(value: number | null | undefined, digits = 1): string {
+  return value === null || value === undefined || !Number.isFinite(value)
+    ? '—'
+    : value.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function sourceLabel(source: string | undefined): string {
+  if (!source) return 'Provider unavailable';
+  return source.toLowerCase().includes('open-meteo') ? 'Open-Meteo' : source;
+}
+
+function anomalyLabel(value: EnvironmentalValue | null | undefined, threshold: number): string {
+  const amount = valueOf(value);
+  if (amount === null) return 'Unavailable';
+  if (amount > threshold) return 'Above Normal';
+  if (amount < -threshold) return 'Below Normal';
+  return 'Normal';
+}
+
+function forecastRows(daily: WeatherDailyForecast | undefined) {
+  if (!daily?.time.length) return [];
+  return daily.time.slice(0, 7).map((date, index) => ({
+    date,
+    min: daily.temperature_2m_min[index] ?? null,
+    max: daily.temperature_2m_max[index] ?? null,
+    precipitation: daily.precipitation_sum[index] ?? null,
+    code: daily.weather_code[index] ?? null,
+  }));
+}
+
+function CurrentWeather({ weather }: { weather: WeatherPayload | null | undefined }) {
+  const temperature = valueOf(weather?.temperature_2m);
+  const humidity = valueOf(weather?.relative_humidity_2m);
+  const precipitation = valueOf(weather?.precipitation);
+  const wind = valueOf(weather?.wind_speed_10m);
+  const condition = weatherCondition(valueOf(weather?.weather_code));
+  const WeatherIcon = condition.icon;
+  const provenance = weather?.temperature_2m ?? weather?.relative_humidity_2m ?? weather?.precipitation;
+  const stress = heatStress(temperature, humidity);
+
   return (
-    <li className="climate-metric-row">
-      <div className="climate-metric-main">
-        <span className="climate-metric-label">{label}</span>
-        <span className="climate-metric-value">
-          {value?.value !== undefined && value.value !== null
-            ? value.value.toLocaleString()
-            : '—'}
-          {value?.unit ? <span className="climate-metric-unit"> {value.unit}</span> : null}
-        </span>
-      </div>
-      {value && (
-        <dl className="climate-metric-meta">
+    <section id="climate-today" className="climate-dashboard-section" aria-labelledby="climate-current-title">
+      <article className="climate-current-card">
+        <div className="climate-current-primary">
+          <span className="climate-current-icon" data-severity={condition.severity}><WeatherIcon aria-hidden="true" /></span>
           <div>
-            <dt>Source</dt>
-            <dd>{value.source}</dd>
+            <h2 id="climate-current-title">{formatNumber(temperature)}{temperature !== null ? '°C' : ''}</h2>
+            <p>{condition.label}</p>
           </div>
-          <div>
-            <dt>Acquired</dt>
-            <dd>{formatAcquiredAt(value.acquired_at)}</dd>
+          <div className="climate-current-source">
+            <span>Live · {sourceLabel(provenance?.source ?? weather?.model_name)}</span>
+            <small>Updated {formatDate(provenance?.retrieved_at ?? weather?.valid_time)}</small>
           </div>
-          <div>
-            <dt>Quality</dt>
-            <dd>{value.quality}</dd>
-          </div>
-          <div>
-            <dt>Mode</dt>
-            <dd>
-              <span className="evidence-mode-badge">{value.data_mode}</span>
-            </dd>
-          </div>
-        </dl>
-      )}
-    </li>
-  );
-}
+        </div>
 
-// ---------------------------------------------------------------------------
-// Unknown state
-// ---------------------------------------------------------------------------
+        <div className="climate-current-metrics">
+          <div><Droplets aria-hidden="true" /><span><small>Humidity</small><strong>{formatNumber(humidity, 0)}{humidity !== null ? ' %' : ''}</strong></span></div>
+          <div><CloudRain aria-hidden="true" /><span><small>Rain</small><strong>{formatNumber(precipitation)}{precipitation !== null ? ' mm' : ''}</strong></span></div>
+          <div><Wind aria-hidden="true" /><span><small>Wind</small><strong>{formatNumber(wind)}{wind !== null ? ' m/s' : ''}</strong></span></div>
+          <div data-stress={stress.toLowerCase()}><ThermometerSun aria-hidden="true" /><span><small>Heat Stress</small><strong>{stress}</strong></span></div>
+        </div>
 
-function UnknownState({ tabLabel }: { tabLabel: string }) {
-  return (
-    <div className="climate-unknown" role="status" aria-label={`${tabLabel} climate data unavailable`}>
-      <p className="climate-unknown-label">Unknown</p>
-      <p className="climate-unknown-note">
-        No data is available for this section. Run an analysis or wait for data to be collected.
-      </p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tabs
-// ---------------------------------------------------------------------------
-
-interface CurrentTabProps {
-  weather: WeatherPayload | null | undefined;
-}
-
-function CurrentTab({ weather }: CurrentTabProps) {
-  const hasData =
-    weather &&
-    (weather.temperature_2m ||
-      weather.precipitation ||
-      weather.relative_humidity_2m ||
-      weather.wind_speed_10m);
-
-  if (!hasData) return <UnknownState tabLabel="Current" />;
-
-  return (
-    <section aria-label="Current climate conditions">
-      {weather.model_name && (
-        <p className="climate-tab-source-note">
-          <Cloud aria-hidden="true" />
-          {weather.model_name}
-          {weather.valid_time
-            ? ` · Valid: ${formatAcquiredAt(weather.valid_time)}`
-            : null}
-          {weather.issue_time
-            ? ` · Issued: ${formatAcquiredAt(weather.issue_time)}`
-            : null}
-        </p>
-      )}
-      <ul className="climate-metric-list" aria-label="Current weather observations">
-        <MetricRow label="Temperature" value={weather.temperature_2m} />
-        <MetricRow label="Precipitation" value={weather.precipitation} />
-        <MetricRow label="Relative humidity" value={weather.relative_humidity_2m} />
-        <MetricRow label="Wind speed" value={weather.wind_speed_10m} />
-        <MetricRow label="Wind direction" value={weather.wind_direction_10m} />
-        <MetricRow label="Cloud cover" value={weather.cloud_cover} />
-      </ul>
-      <p className="climate-data-type-label">
-        <span className="climate-data-type-badge">Observed / Forecast</span>
-        {weather.forecast_horizon_hours != null
-          ? ` Forecast horizon: ${weather.forecast_horizon_hours} h`
-          : null}
-      </p>
+        <details className="climate-data-details">
+          <summary><Info aria-hidden="true" /> Data details</summary>
+          <dl>
+            <div><dt>Source</dt><dd>{sourceLabel(provenance?.source ?? weather?.model_name)}</dd></div>
+            <div><dt>Acquired</dt><dd>{formatDate(provenance?.acquired_at ?? weather?.valid_time)}</dd></div>
+            <div><dt>Retrieved</dt><dd>{formatDate(provenance?.retrieved_at)}</dd></div>
+            <div><dt>Quality</dt><dd>{provenance?.quality ?? 'Unavailable'}</dd></div>
+            <div><dt>Mode</dt><dd>{provenance?.data_mode ?? 'Unavailable'}</dd></div>
+            <div><dt>Forecast horizon</dt><dd>{weather?.forecast_horizon_hours != null ? `${weather.forecast_horizon_hours} h` : 'Unavailable'}</dd></div>
+          </dl>
+        </details>
+      </article>
     </section>
   );
 }
 
-interface SevenDaysTabProps {
-  weather: WeatherPayload | null | undefined;
-}
-
-function SevenDaysTab({ weather }: SevenDaysTabProps) {
-  const hasData =
-    weather &&
-    (weather.temperature_2m ||
-      weather.precipitation ||
-      weather.wind_speed_10m);
-
-  if (!hasData) return <UnknownState tabLabel="Next 7 Days" />;
-
+function SevenDayForecast({ weather }: { weather: WeatherPayload | null | undefined }) {
+  const rows = forecastRows(weather?.daily);
   return (
-    <section aria-label="Next 7-day forecast">
-      {weather.model_name && (
-        <p className="climate-tab-source-note">
-          <CloudRain aria-hidden="true" />
-          {weather.model_name}
-          {weather.forecast_horizon_hours != null
-            ? ` · ${weather.forecast_horizon_hours} h forecast horizon`
-            : null}
-        </p>
-      )}
-      <ul className="climate-metric-list" aria-label="7-day forecast values">
-        <MetricRow label="Temperature range" value={weather.temperature_2m} />
-        <MetricRow label="Precipitation" value={weather.precipitation} />
-        <MetricRow label="Wind speed" value={weather.wind_speed_10m} />
-      </ul>
-      <p className="climate-data-type-label">
-        <span className="climate-data-type-badge">Forecast</span>
-        Short-range weather provider data
-      </p>
-    </section>
-  );
-}
-
-interface MonthlyTabProps {
-  climateBaseline: ClimateBaselinePayload | null | undefined;
-  satellite: SatellitePayload | null | undefined;
-}
-
-function MonthlyTab({ climateBaseline }: MonthlyTabProps) {
-  const hasData =
-    climateBaseline &&
-    (climateBaseline.temperature_anomaly || climateBaseline.rainfall_anomaly);
-
-  if (!hasData) return <UnknownState tabLabel="Monthly" />;
-
-  return (
-    <section aria-label="Monthly seasonal climatology">
-      {climateBaseline.baseline_period && (
-        <p className="climate-tab-source-note">
-          <ThermometerSun aria-hidden="true" />
-          Baseline period: {climateBaseline.baseline_period}
-          {climateBaseline.baseline_source
-            ? ` (${climateBaseline.baseline_source})`
-            : null}
-        </p>
-      )}
-      <ul className="climate-metric-list" aria-label="Monthly climate baseline values">
-        <MetricRow label="Temperature anomaly" value={climateBaseline.temperature_anomaly} />
-        <MetricRow label="Rainfall anomaly" value={climateBaseline.rainfall_anomaly} />
-      </ul>
-      <p className="climate-data-type-label">
-        <span className="climate-data-type-badge">Climatology</span>
-        Seasonal baseline — deviation from long-term average
-      </p>
-    </section>
-  );
-}
-
-interface AnnualTabProps {
-  climateBaseline: ClimateBaselinePayload | null | undefined;
-}
-
-function AnnualTab({ climateBaseline }: AnnualTabProps) {
-  const hasData =
-    climateBaseline &&
-    (climateBaseline.baseline_source ||
-      climateBaseline.baseline_period ||
-      climateBaseline.temperature_anomaly ||
-      climateBaseline.rainfall_anomaly);
-
-  if (!hasData) return <UnknownState tabLabel="Annual" />;
-
-  return (
-    <section aria-label="Annual climate patterns and growing periods">
-      {climateBaseline.baseline_period && (
-        <p className="climate-tab-source-note">
-          <Sun aria-hidden="true" />
-          Long-term baseline: {climateBaseline.baseline_period}
-          {climateBaseline.baseline_source
-            ? ` · Source: ${climateBaseline.baseline_source}`
-            : null}
-        </p>
-      )}
-      <ul className="climate-metric-list" aria-label="Annual climate baseline values">
-        <MetricRow label="Temperature anomaly" value={climateBaseline.temperature_anomaly} />
-        <MetricRow label="Rainfall anomaly" value={climateBaseline.rainfall_anomaly} />
-      </ul>
-      {climateBaseline.baseline_period && (
-        <div className="climate-annual-summary">
-          <Wind aria-hidden="true" />
-          <p>
-            Seasonal pattern based on the <strong>{climateBaseline.baseline_period}</strong> baseline.
-            {climateBaseline.baseline_source
-              ? ` Data provided by ${climateBaseline.baseline_source}.`
-              : null}
-          </p>
+    <section id="climate-7-days" className="climate-dashboard-section" aria-labelledby="climate-forecast-title">
+      <h2 id="climate-forecast-title" className="climate-section-title">Next 7 Days</h2>
+      {rows.length === 0 ? (
+        <div className="climate-section-empty">Seven-day forecast data unavailable</div>
+      ) : (
+        <div className="climate-forecast-row">
+          {rows.map((day) => {
+            const rainSeverity = precipitationSeverity(day.precipitation);
+            const condition = weatherCondition(day.code);
+            const Icon = day.code === null && rainSeverity !== 'normal' ? CloudRain : condition.icon;
+            const severity = rainSeverity === 'warning' ? 'warning' : rainSeverity === 'rain' ? 'rain' : condition.severity;
+            const date = new Date(`${day.date}T12:00:00Z`);
+            return (
+              <article className="climate-forecast-card" data-severity={severity} key={day.date}>
+                <span>{Number.isNaN(date.getTime()) ? day.date : date.toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase()}</span>
+                <Icon aria-hidden="true" />
+                <strong>{formatNumber(day.max, 0)}{day.max !== null ? '°' : ''}</strong>
+                <small>{day.min !== null ? `${formatNumber(day.min, 0)}° min` : 'Min —'}</small>
+                <p>{day.precipitation !== null ? `${formatNumber(day.precipitation)} mm rain` : 'Rain —'}</p>
+              </article>
+            );
+          })}
         </div>
       )}
-      <p className="climate-data-type-label">
-        <span className="climate-data-type-badge">Climatology</span>
-        Broad growing periods and seasonal patterns
-      </p>
     </section>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
+function MonthlyClimate({ climateBaseline }: { climateBaseline: ClimateBaselinePayload | null | undefined }) {
+  const [metric, setMetric] = useState<'rainfall' | 'temperature'>('rainfall');
+  const monthly = climateBaseline?.all_monthly_means;
+  const values = metric === 'rainfall' ? monthly?.precipitation_sum : monthly?.temperature_2m_mean;
+  const chartData = MONTHS.map((month, index) => ({ month, value: values?.[String(index + 1)] ?? null }));
+  const hasData = chartData.some((item) => item.value !== null);
+
+  return (
+    <section id="climate-monthly" className="climate-dashboard-section" aria-labelledby="climate-monthly-title">
+      <h2 id="climate-monthly-title" className="climate-section-title">Monthly Climate</h2>
+      <article className="climate-chart-card">
+        <div className="climate-chart-toolbar" aria-label="Monthly climate metric">
+          <button type="button" aria-pressed={metric === 'rainfall'} onClick={() => setMetric('rainfall')}>Rainfall</button>
+          <button type="button" aria-pressed={metric === 'temperature'} onClick={() => setMetric('temperature')}>Temperature</button>
+        </div>
+        {hasData ? (
+          <div className="climate-chart-wrap" aria-label={`Monthly ${metric} chart`}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#718077' }} />
+                <Tooltip cursor={{ fill: '#f1f6f2' }} contentStyle={{ border: '1px solid #dce6df', borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="value" fill={metric === 'rainfall' ? '#4b9cf5' : '#ee9b45'} radius={[5, 5, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="climate-section-empty">Monthly climate data unavailable</div>
+        )}
+        <div className="climate-monthly-summary">
+          <span><small>Baseline</small><strong>{climateBaseline?.baseline_period ?? 'Unavailable'}</strong></span>
+          <span><small>Rainfall</small><strong>{anomalyLabel(climateBaseline?.rainfall_anomaly, 10)}</strong></span>
+          <span><small>Temperature</small><strong>{anomalyLabel(climateBaseline?.temperature_anomaly, 1)}</strong></span>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function AnnualClimate({ climateBaseline, farmId }: { climateBaseline: ClimateBaselinePayload | null | undefined; farmId?: string }) {
+  const rainfall = climateBaseline?.all_monthly_means?.precipitation_sum;
+  const available = MONTHS.map((_, index) => rainfall?.[String(index + 1)] ?? null)
+    .filter((value): value is number => value !== null);
+  const sorted = [...available].sort((a, b) => a - b);
+  const low = sorted[Math.floor((sorted.length - 1) * 0.33)];
+  const high = sorted[Math.floor((sorted.length - 1) * 0.67)];
+
+  return (
+    <section id="climate-annual" className="climate-dashboard-section" aria-labelledby="climate-annual-title">
+      <h2 id="climate-annual-title" className="climate-section-title">Annual Climate</h2>
+      <article className="climate-annual-card">
+        {available.length === 0 ? (
+          <div className="climate-section-empty">Annual climate data unavailable</div>
+        ) : (
+          <div className="climate-annual-months">
+            {MONTHS.map((month, index) => {
+              const value = rainfall?.[String(index + 1)] ?? null;
+              const label = value === null ? 'Unavailable' : value <= low ? 'Dry' : value >= high ? 'Wet' : 'Normal';
+              return <div key={month} data-condition={label.toLowerCase()}><strong>{month}</strong><span>{label}</span><small>{value === null ? '—' : `${formatNumber(value)} mm`}</small></div>;
+            })}
+          </div>
+        )}
+        <div className="climate-growing-periods">
+          <div><strong>Best Growing Periods</strong><p>Crop-specific planting windows are available in Annual Crop Plan.</p></div>
+          {farmId && <Link href={`/app/farms/${farmId}/annual-plan`}>View Annual Crop Plan <ExternalLink aria-hidden="true" /></Link>}
+        </div>
+      </article>
+    </section>
+  );
+}
 
 export interface ClimateOverviewProps {
   weather: WeatherPayload | null | undefined;
-  satellite: SatellitePayload | null | undefined;
+  satellite?: SatellitePayload | null | undefined;
   climateBaseline: ClimateBaselinePayload | null | undefined;
+  farmId?: string;
 }
 
-export function ClimateOverview({ weather, satellite, climateBaseline }: ClimateOverviewProps) {
-  const [activeTab, setActiveTab] = useState<ClimateTab>('current');
-
+export function ClimateOverview({ weather, climateBaseline, farmId }: ClimateOverviewProps) {
   return (
-    <section className="climate-overview workspace-card" aria-label="Climate Overview">
-      <div className="climate-overview-header">
-        <h2>Climate Overview</h2>
-      </div>
-
-      {/* Tab list */}
-      <div className="climate-tab-list" role="tablist" aria-label="Climate time horizons">
-        {TAB_LABELS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            id={`climate-tab-${tab.id}`}
-            aria-selected={activeTab === tab.id}
-            aria-controls={`climate-panel-${tab.id}`}
-            data-active={activeTab === tab.id || undefined}
-            className="climate-tab-button"
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab panels */}
-      <div className="climate-tab-content">
-        <div
-          role="tabpanel"
-          id="climate-panel-current"
-          aria-labelledby="climate-tab-current"
-          hidden={activeTab !== 'current'}
-        >
-          {activeTab === 'current' && (
-            <CurrentTab weather={weather} />
-          )}
-        </div>
-
-        <div
-          role="tabpanel"
-          id="climate-panel-7days"
-          aria-labelledby="climate-tab-7days"
-          hidden={activeTab !== '7days'}
-        >
-          {activeTab === '7days' && (
-            <SevenDaysTab weather={weather} />
-          )}
-        </div>
-
-        <div
-          role="tabpanel"
-          id="climate-panel-monthly"
-          aria-labelledby="climate-tab-monthly"
-          hidden={activeTab !== 'monthly'}
-        >
-          {activeTab === 'monthly' && (
-            <MonthlyTab climateBaseline={climateBaseline} satellite={satellite} />
-          )}
-        </div>
-
-        <div
-          role="tabpanel"
-          id="climate-panel-annual"
-          aria-labelledby="climate-tab-annual"
-          hidden={activeTab !== 'annual'}
-        >
-          {activeTab === 'annual' && (
-            <AnnualTab climateBaseline={climateBaseline} />
-          )}
-        </div>
-      </div>
+    <section className="climate-overview" aria-label="Climate Overview">
+      <nav className="climate-section-nav" aria-label="Climate sections">
+        <a href="#climate-today">Today</a>
+        <a href="#climate-7-days">7 Days</a>
+        <a href="#climate-monthly">Monthly</a>
+        <a href="#climate-annual">Annual</a>
+      </nav>
+      <CurrentWeather weather={weather} />
+      <SevenDayForecast weather={weather} />
+      <MonthlyClimate climateBaseline={climateBaseline} />
+      <AnnualClimate climateBaseline={climateBaseline} farmId={farmId} />
     </section>
   );
 }

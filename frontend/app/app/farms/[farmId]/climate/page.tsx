@@ -64,10 +64,11 @@ export default function ClimatePage() {
     <div className="climate-page">
       <div className="climate-page-header">
         <div>
-          <h1>{farmData.name} - Climate Overview</h1>
+          <h1>Climate Overview</h1>
           <p className="climate-page-subtitle">
-            Current conditions, forecasts, and long-term climate patterns
+            Understand current and upcoming climate conditions around your farm.
           </p>
+          <p className="climate-page-farm">{farmData.name}</p>
         </div>
       </div>
 
@@ -103,6 +104,7 @@ export default function ClimatePage() {
             weather={twin.weather}
             satellite={twin.satellite}
             climateBaseline={twin.climate_baseline}
+            farmId={farmId}
           />
         )}
       </div>
