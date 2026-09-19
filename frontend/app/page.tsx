@@ -293,54 +293,58 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="features-section" id="features" aria-labelledby="features-title">
-        <div className="section-container">
-          <div className="section-header">
-            <p className="section-eyebrow">Capabilities</p>
-            <h2 id="features-title" className="section-title">
-              Everything you need to farm smarter
+      {/* Features Section - Bento Grid */}
+      <section className="redesigned-features-section" id="features" aria-labelledby="features-title">
+        <div className="redesigned-section-container">
+          <div className="redesigned-section-header">
+            <p className="redesigned-eyebrow">FARMTWIN CAPABILITIES</p>
+            <h2 id="features-title" className="redesigned-section-heading">
+              Everything you need<br />to understand your farm
             </h2>
-            <p className="section-subtitle">
-              Comprehensive tools for crop planning, risk management, and climate adaptation—all grounded in real environmental data.
+            <p className="redesigned-section-description">
+              Environmental evidence becomes useful when it can be turned into understandable decisions.
             </p>
           </div>
           
-          <div className="feature-grid">
-            {features.map(({ icon: Icon, title, copy, color }) => (
-              <article className="feature-card" key={title} data-color={color}>
-                <div className="feature-icon-wrapper">
-                  <Icon className="feature-icon" />
+          <div className="redesigned-bento-grid">
+            {features.map(({ icon: Icon, title, copy, accent }, index) => (
+              <article 
+                className="redesigned-bento-card" 
+                key={title} 
+                data-accent={accent}
+                data-size={index >= 3 ? 'large' : 'regular'}
+              >
+                <div className="redesigned-bento-icon">
+                  <Icon />
                 </div>
-                <h3 className="feature-title">{title}</h3>
-                <p className="feature-description">{copy}</p>
+                <h3 className="redesigned-bento-title">{title}</h3>
+                <p className="redesigned-bento-description">{copy}</p>
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Data Sources Section */}
-      <section className="sources-section" aria-labelledby="sources-title">
-        <div className="section-container">
-          <div className="section-header">
-            <p className="section-eyebrow">Environmental evidence</p>
-            <h2 id="sources-title" className="section-title">
+      {/* Environmental Evidence Section */}
+      <section className="redesigned-evidence-section" aria-labelledby="evidence-title">
+        <div className="redesigned-section-container">
+          <div className="redesigned-section-header">
+            <p className="redesigned-eyebrow">ENVIRONMENTAL EVIDENCE</p>
+            <h2 id="evidence-title" className="redesigned-section-heading">
               Built to preserve provenance
             </h2>
-            <p className="section-subtitle">
-              Every result retains its provider, timestamp, quality status, and geographic relevance. 
-              Unknown data stays unknown—no fabricated readings.
+            <p className="redesigned-section-description">
+              Every result should retain its provider, timestamp, quality, data mode, and geographic relevance.
             </p>
           </div>
           
-          <div className="data-source-badges">
+          <div className="redesigned-source-chips">
             {dataSources.map(({ icon: Icon, name, desc }) => (
-              <div className="source-badge" key={name}>
-                <Icon className="source-icon" />
-                <div className="source-info">
-                  <span className="source-name">{name}</span>
-                  <span className="source-desc">{desc}</span>
+              <div className="redesigned-source-chip" key={name}>
+                <Icon className="redesigned-source-chip-icon" />
+                <div className="redesigned-source-chip-info">
+                  <span className="redesigned-source-chip-name">{name}</span>
+                  <span className="redesigned-source-chip-desc">{desc}</span>
                 </div>
               </div>
             ))}
@@ -349,35 +353,39 @@ export default function Home() {
       </section>
 
       {/* Final CTA Section */}
-      <section className="final-cta-section">
-        <div className="cta-container">
-          <div className="cta-content">
-            <p className="cta-eyebrow">Start with what's real</p>
-            <h2 className="cta-heading">
-              Understand your farm before risking a season.
+      <section className="redesigned-final-cta">
+        <div className="redesigned-cta-container">
+          <div className="redesigned-cta-content">
+            <p className="redesigned-cta-eyebrow">START WITH WHAT IS REAL</p>
+            <h2 className="redesigned-cta-heading">
+              Understand your farm<br />before risking a season.
             </h2>
           </div>
-          <Button size="lg" render={<Link href="/app" />} className="cta-action-button">
-            Open the workspace
-            <ArrowRight />
+          <Button size="lg" render={<Link href="/app" />} className="redesigned-cta-button">
+            Start Farm Analysis
+            <ArrowRight className="redesigned-cta-arrow" />
           </Button>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="premium-footer">
-        <div className="footer-container">
-          <div className="footer-brand">
+      <footer className="redesigned-footer">
+        <div className="redesigned-footer-container">
+          <div className="redesigned-footer-brand">
             <Brand />
-            <p className="footer-tagline">Climate-smart farm planning</p>
+            <p className="redesigned-footer-tagline">Climate-smart farm planning</p>
           </div>
-          <nav className="footer-nav" aria-label="Footer navigation">
+          
+          <nav className="redesigned-footer-nav" aria-label="Footer navigation">
             <a href="#how-it-works">How it works</a>
-            <a href="#features">Features</a>
+            <a href="#features">Capabilities</a>
             <Link href="/app/data-sources">Data sources</Link>
             <Link href="/app/project">Project</Link>
           </nav>
-          <p className="footer-copyright">© 2024 FarmTwin. All rights reserved.</p>
+          
+          <p className="redesigned-footer-copyright">
+            FarmTwin · Climate-smart agriculture
+          </p>
         </div>
       </footer>
     </main>
