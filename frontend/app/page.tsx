@@ -31,19 +31,19 @@ const challenges = [
   { 
     icon: CloudRain, 
     title: 'Changing climate patterns', 
-    copy: 'Rainfall and temperature shifts make traditional planting calendars unreliable.',
+    copy: 'Rainfall and temperature are becoming harder to plan around.',
     accent: 'blue'
   },
   { 
     icon: Sprout, 
     title: 'Costly crop decisions', 
-    copy: 'Every planting choice affects an entire season's yield and income.',
-    accent: 'green'
+    copy: 'A poor crop or planting-window choice can affect an entire growing season.',
+    accent: 'amber'
   },
   { 
     icon: TriangleAlert, 
     title: 'Fast-moving hazards', 
-    copy: 'Drought, floods, and extreme weather can devastate unprepared farms.',
+    copy: 'Drought, floods, heat, and heavy rainfall can damage farms quickly.',
     accent: 'red'
   },
 ];
@@ -52,22 +52,22 @@ const workflowSteps = [
   { 
     icon: MapPinned, 
     title: 'Select your farm', 
-    copy: 'Draw your farm boundary on the map. FarmTwin validates the area and prepares for analysis.'
+    copy: 'Draw and validate the exact boundary.'
   },
   { 
     icon: Database, 
     title: 'Connect evidence', 
-    copy: 'Satellite, weather, soil, and terrain data automatically connect to your exact location.'
+    copy: 'Check coverage, time, quality, and source.'
   },
   { 
     icon: Layers3, 
     title: 'Build the twin', 
-    copy: 'A complete environmental snapshot is created with full data provenance and quality tracking.'
+    copy: 'Create a versioned environmental snapshot.'
   },
   { 
     icon: TrendingUp, 
-    title: 'Make decisions', 
-    copy: 'Compare crop options, assess risks, and plan your season with confidence.'
+    title: 'Make a decision', 
+    copy: 'Compare explained results and useful actions.'
   },
 ];
 
@@ -241,27 +241,26 @@ export default function Home() {
       </section>
 
       {/* Why FarmTwin Section */}
-      <section className="why-section" aria-labelledby="why-title">
-        <div className="section-container">
-          <div className="section-header">
-            <p className="section-eyebrow">Why FarmTwin</p>
-            <h2 id="why-title" className="section-title">
-              Farming decisions are becoming harder
+      <section className="redesigned-why-section" aria-labelledby="why-title">
+        <div className="redesigned-section-container">
+          <div className="redesigned-section-header">
+            <p className="redesigned-eyebrow">WHY FARMTWIN</p>
+            <h2 id="why-title" className="redesigned-section-heading">
+              Farming decisions<br />are becoming harder
             </h2>
-            <p className="section-subtitle">
-              Climate change is making traditional farming knowledge less reliable. 
-              FarmTwin provides the environmental evidence needed to adapt.
+            <p className="redesigned-section-description">
+              FarmTwin is designed to show the evidence behind a decision before the growing season is at risk.
             </p>
           </div>
           
-          <div className="challenge-cards">
+          <div className="redesigned-problem-cards">
             {challenges.map(({ icon: Icon, title, copy, accent }) => (
-              <article className="challenge-card" key={title} data-accent={accent}>
-                <div className="challenge-icon-wrapper">
-                  <Icon className="challenge-icon" />
+              <article className="redesigned-problem-card" key={title} data-accent={accent}>
+                <div className="redesigned-card-icon">
+                  <Icon />
                 </div>
-                <h3 className="challenge-title">{title}</h3>
-                <p className="challenge-description">{copy}</p>
+                <h3 className="redesigned-card-title">{title}</h3>
+                <p className="redesigned-card-description">{copy}</p>
               </article>
             ))}
           </div>
@@ -269,26 +268,26 @@ export default function Home() {
       </section>
 
       {/* How It Works Section */}
-      <section className="workflow-section" id="how-it-works" aria-labelledby="workflow-title">
-        <div className="section-container">
-          <div className="section-header">
-            <p className="section-eyebrow">How it works</p>
-            <h2 id="workflow-title" className="section-title">
+      <section className="redesigned-how-section" id="how-it-works" aria-labelledby="workflow-title">
+        <div className="redesigned-section-container">
+          <div className="redesigned-section-header">
+            <p className="redesigned-eyebrow">HOW IT WORKS</p>
+            <h2 id="workflow-title" className="redesigned-section-heading">
               One clear path from land to action
             </h2>
           </div>
           
-          <div className="workflow-steps">
+          <div className="redesigned-workflow-steps">
             {workflowSteps.map(({ icon: Icon, title, copy }, index) => (
-              <div className="workflow-step" key={title}>
-                <div className="step-number">{index + 1}</div>
-                <div className="step-icon-wrapper">
-                  <Icon className="step-icon" />
+              <div className="redesigned-workflow-step" key={title}>
+                <div className="redesigned-step-badge">{index + 1}</div>
+                <div className="redesigned-step-icon">
+                  <Icon />
                 </div>
-                <h3 className="step-title">{title}</h3>
-                <p className="step-description">{copy}</p>
+                <h3 className="redesigned-step-title">{title}</h3>
+                <p className="redesigned-step-description">{copy}</p>
                 {index < workflowSteps.length - 1 && (
-                  <ArrowRight className="step-arrow" aria-hidden="true" />
+                  <ArrowRight className="redesigned-step-connector" aria-hidden="true" />
                 )}
               </div>
             ))}
