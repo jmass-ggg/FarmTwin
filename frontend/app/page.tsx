@@ -11,13 +11,11 @@ import {
   Database,
   FlaskConical,
   Layers3,
-  Leaf,
   MapPinned,
   Menu,
   Mountain,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Sprout,
   TriangleAlert,
   TrendingUp,
@@ -75,32 +73,32 @@ const features = [
   { 
     icon: Layers3, 
     title: 'Farm Digital Twin', 
-    copy: 'Comprehensive environmental profile combining terrain, soil, climate, satellite vegetation analysis, and real-time weather.',
-    color: 'emerald'
+    copy: 'Bring farm shape, terrain, vegetation, climate, water, and soil evidence into one source-aware view.',
+    accent: 'green'
   },
   { 
     icon: FlaskConical, 
     title: 'Crop Simulator', 
-    copy: 'Evidence-based crop recommendations with transparent suitability scoring and limiting factor analysis.',
-    color: 'blue'
+    copy: 'Compare crops and planting choices using environmental conditions and transparent suitability rules.',
+    accent: 'amber'
   },
   { 
     icon: CalendarDays, 
     title: 'Annual Crop Plan', 
-    copy: 'Optimized 12-month planting calendar aligned with rainfall seasons and crop rotation best practices.',
-    color: 'violet'
+    copy: 'Turn supported seasonal options into a farmer-controlled twelve-month crop plan.',
+    accent: 'blue'
   },
   { 
     icon: ShieldAlert, 
     title: 'Disaster Center', 
-    copy: 'Real-time drought, flood, and heat stress monitoring with practical mitigation actions.',
-    color: 'amber'
+    copy: 'Understand drought, flood, heat, rainfall, and wind risks with practical actions.',
+    accent: 'green'
   },
   { 
     icon: CloudSun, 
     title: 'Climate Overview', 
-    copy: 'Current conditions, 7-day forecasts, and historical climate patterns in one clear dashboard.',
-    color: 'sky'
+    copy: 'Keep current observations, forecasts, seasonal outlooks, and scenarios clearly separated.',
+    accent: 'blue'
   },
 ];
 
