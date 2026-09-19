@@ -48,7 +48,6 @@ const STAGE_LABELS: Record<string, string> = {
   satellite: 'Satellite',
   soil: 'Soil',
   terrain: 'Terrain',
-  conduit: 'Conduit',
 };
 
 // ---------------------------------------------------------------------------
@@ -117,7 +116,7 @@ function StageIcon({ stage }: { stage: JobStage | undefined }) {
 }
 
 function StageProgress({ stages }: { stages: Record<string, JobStage> }) {
-  const ordered = ['weather', 'climate', 'satellite', 'soil', 'terrain', 'conduit'];
+  const ordered = ['weather', 'climate', 'satellite', 'soil', 'terrain'];
   return (
     <ul className="job-stage-list" aria-label="Analysis stage progress">
       {ordered.map((key) => {
@@ -462,52 +461,14 @@ function TerrainSection({ terrain }: { terrain: FarmTwinResult['terrain'] }) {
   );
 }
 
-function ConduitSection({ conduit }: { conduit: FarmTwinResult['conduit'] }) {
-  return (
-    <section className="farm-insight-group">
-      <h2><CloudRain /> Conduit station</h2>
-      {!conduit ? (
-        <>
-          <p style={{ margin: 0, color: '#738178', fontSize: '.82rem', fontWeight: 500 }}>Unavailable</p>
-          <p className="insight-note" style={{ marginTop: '4px' }}>
-            Data is currently unavailable for this source.
-          </p>
-        </>
-      ) : !conduit.eligible ? (
-        <>
-          <p style={{ margin: 0, color: '#738178', fontSize: '.82rem', fontWeight: 500 }}>Ineligible</p>
-          <p className="insight-note" style={{ marginTop: '4px' }}>
-            {conduit.eligibility_reason}
-          </p>
-          {conduit.station_distance_km !== null && (
-            <dl style={{ marginTop: '12px' }}>
-              <div><dt>Nearest station distance</dt><dd>{conduit.station_distance_km.toFixed(1)} km</dd></div>
-            </dl>
-          )}
-        </>
-      ) : (
-        <dl>
-          {conduit.station_distance_km !== null && (
-            <div><dt>Station distance</dt><dd>{conduit.station_distance_km.toFixed(1)} km</dd></div>
-          )}
-          {conduit.elevation_difference_m !== null && (
-            <div><dt>Elevation difference</dt><dd>{conduit.elevation_difference_m.toFixed(0)} m</dd></div>
-          )}
-          {conduit.latest_aggregate && Object.entries(conduit.latest_aggregate).map(([key, val]) => (
-            <div key={key}><dt>{key}</dt><dd>{valueText(val)}</dd></div>
-          ))}
-        </dl>
-      )}
-    </section>
-  );
-}
+
 
 function SourceStatusSection({ statuses }: { statuses: Record<string, string> }) {
   return (
     <section className="farm-insight-group">
       <h2><CloudRain /> Source status</h2>
       <div className="source-status-grid">
-        {['weather', 'satellite', 'soil', 'terrain', 'conduit'].map((src) => (
+        {['weather', 'satellite', 'soil', 'terrain'].map((src) => (
           <span key={src} data-status={statuses[src] ?? 'unavailable'}>
             {src} <b>{statuses[src] ?? 'unavailable'}</b>
           </span>
@@ -526,7 +487,6 @@ function collectEvidence(twin: FarmTwinResult | null) {
   const satellite = twin?.satellite;
   const soil = twin?.soil?.depth_0_5cm ?? twin?.soil?.depth_5_15cm;
   const terrain = twin?.terrain;
-  const conduit = twin?.conduit;
   const values = (items: Array<EnvironmentalValue | null | undefined>) =>
     items.filter((item): item is EnvironmentalValue => item !== null && item !== undefined);
   return {
@@ -534,7 +494,6 @@ function collectEvidence(twin: FarmTwinResult | null) {
     satellite: values([satellite?.ndvi, satellite?.ndmi]),
     soil: values([soil?.phh2o, soil?.clay, soil?.sand, soil?.silt, soil?.soc]),
     terrain: values([terrain?.mean_elevation_m, terrain?.min_elevation_m, terrain?.max_elevation_m, terrain?.mean_slope_deg]),
-    conduit: conduit?.latest_aggregate ? Object.values(conduit.latest_aggregate) : [],
   };
 }
 
@@ -727,7 +686,6 @@ export default function FarmTwinPage() {
             <VegetationSection satellite={twin.satellite} />
             <SoilSection soil={twin.soil} />
             <TerrainSection terrain={twin.terrain} />
-            <ConduitSection conduit={twin.conduit} />
             <SourceStatusSection statuses={displayStatuses} />
             <details className="twin-evidence-accordion">
               <summary>Evidence and source details</summary>
@@ -736,7 +694,6 @@ export default function FarmTwinPage() {
                 <EvidenceSection title="Satellite" status={statuses.satellite ?? 'unavailable'} values={evidence.satellite} />
                 <EvidenceSection title="Soil" status={statuses.soil ?? 'unavailable'} values={evidence.soil} />
                 <EvidenceSection title="Terrain" status={statuses.terrain ?? 'unavailable'} values={evidence.terrain} />
-                <EvidenceSection title="Conduit" status={statuses.conduit ?? 'unavailable'} values={evidence.conduit} />
               </div>
               <p className="twin-evidence-note">
                 Map colours summarise farm-wide evidence. Pixel-level spatial layers appear only when a source supplies a georeferenced raster.
