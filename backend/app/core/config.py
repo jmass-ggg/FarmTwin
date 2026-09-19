@@ -276,6 +276,11 @@ class Settings(BaseSettings):
     # Redis URL for the analysis job queue (worker process)
     redis_url: str = "redis://localhost:6379"
 
+    # OpenRouter AI configuration for crop explanations
+    openrouter_api_key: SecretStr = SecretStr("")
+    openrouter_model: str = "google/gemini-flash-1.5-8b"
+    openrouter_timeout_seconds: int = 10
+
     # Copernicus Data Space Ecosystem (CDSE) credentials for satellite band downloads.
     # Register free at https://dataspace.copernicus.eu/ then set both vars.
     # When blank, satellite band downloads will fail with 401 and the stage

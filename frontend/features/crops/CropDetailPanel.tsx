@@ -1,22 +1,28 @@
 import {
   AlertTriangle,
   CalendarPlus,
+  CheckCircle2,
   Droplets,
   Leaf,
+  Loader2,
   Thermometer,
   ThumbsDown,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 import { buttonVariants } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { CropEntry, SimulationResult } from '@/lib/api/crops';
+import type { CropEntry, CropExplanation, SimulateRequest, SimulationResult } from '@/lib/api/crops';
+import { getCropExplanation } from '@/lib/api/crops';
 import { CropVisual } from './CropCard';
 
 interface CropDetailPanelProps {
   result: SimulationResult;
   cropEntry: CropEntry | null;
   planHref: string;
+  farmId: string;
+  simulateRequest: SimulateRequest;
 }
 
 const COMPONENT_LABELS: Record<string, string> = {
@@ -39,8 +45,35 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
   );
 }
 
-export function CropDetailPanel({ result, cropEntry, planHref }: CropDetailPanelProps) {
+export function CropDetailPanel({ result, cropEntry, planHref, farmId, simulateRequest }: CropDetailPanelProps) {
   const components = result.components;
+  const [explanation, setExplanation] = useState<CropExplanation | null>(null);
+  const [explanationLoading, setExplanationLoading] = useState(true);
+  const [explanationError, setExplanationError] = useState(false);
+
+  // Fetch AI explanation when crop is selected
+  useEffect(() => {
+    const controller = new AbortController();
+    
+    setExplanationLoading(true);
+    setExplanationError(false);
+    
+    getCropExplanation(farmId, result.crop_name, simulateRequest, controller.signal)
+      .then((response) => {
+        setExplanation(response.explanation);
+        setExplanationLoading(false);
+      })
+      .catch((error) => {
+        // Don't set error on abort
+        if (!controller.signal.aborted) {
+          console.error('Failed to fetch crop explanation:', error);
+          setExplanationError(true);
+          setExplanationLoading(false);
+        }
+      });
+    
+    return () => controller.abort();
+  }, [farmId, result.crop_name, simulateRequest]);
 
   return (
     <div className="crop-detail-panel workspace-card">
@@ -68,15 +101,63 @@ export function CropDetailPanel({ result, cropEntry, planHref }: CropDetailPanel
 
         <TabsContent value="overview">
           <div className="tab-content-overview">
-            <div className="overview-top">
-              <div className="overview-summary">
-                <p className="overview-reason">{result.reason}</p>
-                <p className="overview-limiting">
-                  <strong>Limiting factor:</strong>{' '}
-                  {COMPONENT_LABELS[result.limiting_factor] ?? result.limiting_factor}
-                </p>
-              </div>
+            {/* AI Explanation Section */}
+            <div className="ai-explanation-section">
+              <h3 className="section-heading">Why this score</h3>
+              
+              {explanationLoading && (
+                <div className="explanation-loading">
+                  <Loader2 className="animate-spin" />
+                  <span>Analyzing crop suitability...</span>
+                </div>
+              )}
+              
+              {!explanationLoading && explanation && (
+                <div className="explanation-content">
+                  <p className="explanation-headline">{explanation.headline}</p>
+                  <p className="explanation-summary">{explanation.summary}</p>
+                  
+                  {explanation.strengths.length > 0 && (
+                    <div className="explanation-factors">
+                      <strong>✓ What looks good</strong>
+                      {explanation.strengths.map((strength, idx) => (
+                        <div key={idx} className="explanation-factor">
+                          <span className="factor-label">{strength.factor}</span>
+                          <span className="factor-message">{strength.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {explanation.concerns.length > 0 && (
+                    <div className="explanation-factors">
+                      <strong>⚠ What to watch</strong>
+                      {explanation.concerns.map((concern, idx) => (
+                        <div key={idx} className="explanation-factor">
+                          <span className="factor-label">{concern.factor}</span>
+                          <span className="factor-message">{concern.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {explanation.data_note && (
+                    <p className="explanation-data-note">{explanation.data_note}</p>
+                  )}
+                </div>
+              )}
+              
+              {!explanationLoading && !explanation && explanationError && (
+                <div className="explanation-fallback">
+                  <p className="overview-reason">{result.reason}</p>
+                  <p className="overview-limiting">
+                    <strong>Limiting factor:</strong>{' '}
+                    {COMPONENT_LABELS[result.limiting_factor] ?? result.limiting_factor}
+                  </p>
+                </div>
+              )}
             </div>
+
             <div className="crop-overview-rows">
               <div><Thermometer /><span>Temperature suitability</span><strong>{components.temperature}/100</strong></div>
               <div><Droplets /><span>Water condition</span><strong>{components.water}/100</strong></div>

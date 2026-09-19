@@ -62,6 +62,31 @@ export interface CropListResponse {
   crops: CropEntry[];
 }
 
+// --- AI Explanation types ---
+
+export interface CropExplanationFactor {
+  factor: string;
+  message: string;
+}
+
+export interface CropExplanation {
+  headline: string;
+  summary: string;
+  strengths: CropExplanationFactor[];
+  concerns: CropExplanationFactor[];
+  action: string | null;
+  data_note: string | null;
+  source: 'ai' | 'deterministic_fallback';
+  cached: boolean;
+}
+
+export interface CropExplanationFullResponse {
+  crop_name: string;
+  suitability_index: number;
+  label: string;
+  explanation: CropExplanation;
+}
+
 // --- Error classes ---
 
 export class CropApiError extends Error {
@@ -119,6 +144,28 @@ export async function simulateCrop(
     return (
       await requestApi<SimulationResponse | CropRankingResponse>(
         `/api/v1/farms/${encodeURIComponent(farmId)}/simulate-crop`,
+        {
+          method: 'POST',
+          body: JSON.stringify(request),
+          signal,
+        },
+      )
+    ).data;
+  } catch (error) {
+    return mapCropError(error);
+  }
+}
+
+export async function getCropExplanation(
+  farmId: string,
+  cropName: string,
+  request: SimulateRequest,
+  signal?: AbortSignal,
+): Promise<CropExplanationFullResponse> {
+  try {
+    return (
+      await requestApi<CropExplanationFullResponse>(
+        `/api/v1/farms/${encodeURIComponent(farmId)}/crops/${encodeURIComponent(cropName)}/explanation`,
         {
           method: 'POST',
           body: JSON.stringify(request),

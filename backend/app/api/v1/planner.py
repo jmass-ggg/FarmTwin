@@ -148,6 +148,9 @@ async def get_annual_plan(
         ],
         entries=[_entry_to_response(e) for e in result.entries],
         proposals=[_proposal_to_response(p) for p in result.proposals],
+        solver_status=result.solver_status,
+        fallback_used=result.fallback_used,
+        explanation=result.explanation,
     )
 
 

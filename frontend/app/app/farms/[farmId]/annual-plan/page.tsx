@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { ApiErrorState } from '@/components/api-state';
@@ -47,6 +47,160 @@ import {
   type CropScenarioResult,
   type HazardScenarioResult,
 } from '@/lib/api/scenarios';
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function monthDate(year: number, month: number) {
+  return new Date(Date.UTC(year, month - 1, 1));
+}
+
+function addUtcMonths(value: Date, months: number) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + months, 1));
+}
+
+function formatMonthYear(value: Date, compact = false) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: compact ? 'short' : 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(value);
+}
+
+function farmerFriendlyRisk(value: string) {
+  return value.trim().toLowerCase() === 'no dominant climate signal'
+    ? 'No major climate risk'
+    : value;
+}
+
+interface CropCycleView {
+  seasonId: string;
+  cropName: string;
+  startMonth: number;
+  endMonth: number;
+  score: number | null;
+  reason: string;
+  saved: boolean;
+  continuesNextYear: boolean;
+  durationMonths: number;
+  plantingDate: Date;
+  harvestDate: Date;
+  status: 'upcoming' | 'current' | 'completed';
+}
+
+interface GrowingPlanProps {
+  farmId: string;
+  cycle: CropCycleView;
+  nextCycle: CropCycleView | null;
+  risk: string;
+  onNavigateCycle: (month: number) => void;
+}
+
+function GrowingPlan({ farmId, cycle, nextCycle, risk, onNavigateCycle }: GrowingPlanProps) {
+  const today = new Date();
+  const prepareDate = addUtcMonths(cycle.plantingDate, -1);
+  const growDate = addUtcMonths(cycle.plantingDate, 1);
+  const matureDate = addUtcMonths(cycle.harvestDate, -1);
+  const stages = [
+    { key: 'prepare', label: 'Prepare', start: prepareDate, end: cycle.plantingDate, display: formatMonthYear(prepareDate, true) },
+    { key: 'plant', label: 'Plant', start: cycle.plantingDate, end: growDate, display: formatMonthYear(cycle.plantingDate, true) },
+    { key: 'grow', label: 'Grow', start: growDate, end: matureDate, display: growDate < matureDate ? `${formatMonthYear(growDate, true)}–${formatMonthYear(addUtcMonths(matureDate, -1), true)}` : formatMonthYear(growDate, true) },
+    { key: 'mature', label: 'Mature', start: matureDate, end: cycle.harvestDate, display: formatMonthYear(matureDate, true) },
+    { key: 'harvest', label: 'Harvest', start: cycle.harvestDate, end: addUtcMonths(cycle.harvestDate, 1), display: formatMonthYear(cycle.harvestDate, true) },
+  ].map((stage) => ({
+    ...stage,
+    status: today >= stage.end ? 'complete' : today >= stage.start ? 'current' : 'upcoming',
+  }));
+  const activeStage = stages.find((stage) => stage.status === 'current')
+    ?? stages.find((stage) => stage.status === 'upcoming')
+    ?? stages[stages.length - 1];
+  const tasks: Record<string, string[]> = {
+    prepare: ['Check the field', 'Clear old crop residue', 'Prepare the soil'],
+    plant: [`Plant ${cycle.cropName}`, 'Check soil moisture', 'Review expected rainfall'],
+    grow: ['Monitor crop health', 'Monitor water conditions', 'Check for visible pest or disease signs'],
+    mature: ['Monitor crop maturity', 'Avoid unnecessary intervention', 'Prepare for harvest'],
+    harvest: ['Check crop maturity', 'Prepare for harvest', 'Review the next crop'],
+  };
+  const stageTasks = tasks[activeStage.key];
+  const stableConditions = farmerFriendlyRisk(risk) === 'No major climate risk';
+  const qualityLabel = cycle.score == null
+    ? 'Match pending'
+    : cycle.score >= 85
+      ? 'Excellent match'
+      : cycle.score >= 70
+        ? 'Good match'
+        : 'Possible match';
+  const recoveryMonths = nextCycle
+    ? Math.max(0, (nextCycle.plantingDate.getUTCFullYear() - cycle.harvestDate.getUTCFullYear()) * 12
+      + nextCycle.plantingDate.getUTCMonth() - cycle.harvestDate.getUTCMonth())
+    : 0;
+
+  return (
+    <main className="growing-plan">
+      <Link className="back-link" href={`/app/farms/${farmId}/annual-plan`}>
+        <ArrowLeft /> Back to Annual Plan
+      </Link>
+      <header className="growing-plan-heading">
+        <h1>Your {cycle.cropName} Growing Plan</h1>
+        <p>What to do now, when to harvest, and what comes next.</p>
+      </header>
+
+      <section className="workspace-card growing-plan-summary" aria-label={`${cycle.cropName} cycle summary`}>
+        <CropVisual cropName={cycle.cropName} />
+        <div><strong>{cycle.cropName}</strong><b>{cycle.score ?? '—'}% match</b><span>{qualityLabel}</span></div>
+        <dl><div><dt>Plant</dt><dd>{formatMonthYear(cycle.plantingDate)}</dd></div><div><dt>Harvest</dt><dd>{formatMonthYear(cycle.harvestDate)}</dd></div></dl>
+      </section>
+
+      <section className="growing-plan-section" aria-labelledby="journey-title">
+        <div className="growing-plan-section-heading"><div><h2 id="journey-title">Your crop journey</h2><p>Five simple steps from preparation to harvest.</p></div></div>
+        <ol className="workspace-card growing-plan-journey">
+          {stages.map((stage) => <li key={stage.key} data-status={stage.status}><i>{stage.status === 'complete' ? '✓' : stage.status === 'current' ? '●' : '○'}</i><strong>{stage.label}</strong><span>{stage.display}</span><small>{stage.status === 'complete' ? 'Complete' : stage.status === 'current' ? 'Current' : 'Upcoming'}</small></li>)}
+        </ol>
+      </section>
+
+      <div className="growing-plan-now-grid">
+        <section className="workspace-card growing-plan-tasks">
+          <p className="section-kicker">What to do now</p>
+          <h2>{activeStage.label === 'Grow' ? `Help ${cycle.cropName} grow` : `${activeStage.label} ${cycle.cropName}`}</h2>
+          <span>{activeStage.display}</span>
+          <ul>{stageTasks.map((task, index) => <li key={task} data-done={index === 0 || undefined}><i>{index === 0 ? '✓' : '○'}</i>{task}</li>)}</ul>
+          <b>{Math.max(0, stageTasks.length - 1)} tasks left</b>
+        </section>
+        <aside className="workspace-card growing-plan-field">
+          <h2>How your field looks</h2>
+          <strong data-good={stableConditions || undefined}>{stableConditions ? '✓ Looking good' : '⚠ Needs attention'}</strong>
+          <p>{stableConditions ? 'Current conditions are suitable for this crop.' : `${farmerFriendlyRisk(risk)} is the main condition to watch.`}</p>
+          <Link href={`/app/farms/${farmId}/twin`}>View farm conditions →</Link>
+        </aside>
+      </div>
+
+      <div className="growing-plan-two-column">
+        <section className="workspace-card growing-plan-next-steps">
+          <h2>What happens next</h2>
+          <ol>{stages.filter((stage) => stage.status !== 'complete').map((stage) => <li key={stage.key}><span>{stage.display}</span><strong>{stage.label === 'Grow' ? `Help ${cycle.cropName} grow` : stage.label === 'Plant' ? `Plant ${cycle.cropName}` : stage.label}</strong><small>{stage.status === 'current' ? 'Current' : 'Next'}</small></li>)}</ol>
+        </section>
+        <section className="workspace-card growing-plan-watch">
+          <h2>Things to watch</h2>
+          <div data-good={stableConditions || undefined}><strong>{stableConditions ? '✓ Conditions look stable' : `⚠ ${farmerFriendlyRisk(risk)}`}</strong><span>{stableConditions ? 'Low concern' : 'Watch closely'}</span><p>{stableConditions ? 'Keep monitoring conditions as the crop grows.' : `Keep an eye on ${farmerFriendlyRisk(risk).toLowerCase()} during growth.`}</p></div>
+          <Link href={`/app/farms/${farmId}/risks`}>View all risks →</Link>
+        </section>
+      </div>
+
+      <section className="growing-plan-harvest">
+        <p className="section-kicker">Expected harvest</p>
+        <h2>{formatMonthYear(cycle.harvestDate)}</h2>
+        <p>Your {cycle.cropName} should be ready around {formatMonthYear(cycle.harvestDate)}.</p>
+        <small>Estimate may change with weather conditions.</small>
+      </section>
+
+      {nextCycle && <section className="growing-plan-following" aria-labelledby="following-title"><h2 id="following-title">What’s next?</h2><div><article><span>1</span><strong>{recoveryMonths > 0 ? '🌱 Rest the soil' : `Harvest ${cycle.cropName}`}</strong><small>{recoveryMonths > 0 ? `About ${recoveryMonths} ${recoveryMonths === 1 ? 'month' : 'months'}` : formatMonthYear(cycle.harvestDate)}</small></article><b>→</b><article><span>2</span><strong>🌿 Plant {nextCycle.cropName}</strong><small>Recommended next crop · {nextCycle.score ?? '—'}% match</small><Link href={`/app/farms/${farmId}/annual-plan?season=${encodeURIComponent(nextCycle.seasonId)}&month=${nextCycle.startMonth}`} onClick={() => onNavigateCycle(nextCycle.startMonth)}>View {nextCycle.cropName} Plan</Link></article></div></section>}
+
+      <details className="workspace-card growing-plan-why"><summary>Why {cycle.cropName}?</summary><p>{cycle.reason}</p></details>
+    </main>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Add-to-plan form
@@ -407,16 +561,28 @@ function ProposalDialog({ farmId, proposals, entries, onAccepted }: ProposalDial
 
 export default function AnnualPlanPage() {
   const { farmId } = useParams<{ farmId: string }>();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const year = new Date().getFullYear();
+  const requestedSeason = searchParams.get('season')?.trim() ?? '';
+  const requestedMonth = Number(searchParams.get('month'));
 
-  const [month, setMonth] = useState(1);
+  const [month, setMonth] = useState(() => {
+    if (typeof window === 'undefined') return new Date().getMonth() + 1;
+    const requestedMonth = Number(new URLSearchParams(window.location.search).get('month'));
+    return Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12
+      ? requestedMonth
+      : new Date().getMonth() + 1;
+  });
   const [draftRainfall, setDraftRainfall] = useState(0);
   const [draftTemperature, setDraftTemperature] = useState(0);
   const [draftIrrigationMm, setDraftIrrigationMm] = useState('');
   const [scenario, setScenario] = useState<{ rainfall: number; temperature: number; irrigation: number | null }>({ rainfall: 0, temperature: 0, irrigation: null });
   const [addToPlanOpen, setAddToPlanOpen] = useState(false);
   const [addToPlanCrop, setAddToPlanCrop] = useState<{ name: string; monthNumber: number; monthName: string } | null>(null);
+  const activeMonth = requestedSeason && Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12
+    ? requestedMonth
+    : month;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -447,7 +613,7 @@ export default function AnnualPlanPage() {
     queryKey: [
       'decision-support',
       farmId,
-      month,
+      activeMonth,
       scenario.rainfall,
       scenario.temperature,
     ],
@@ -455,7 +621,7 @@ export default function AnnualPlanPage() {
       calculateDecisionSupport(
         farmId,
         {
-          selected_month: month,
+          selected_month: activeMonth,
           rainfall_change_pct: scenario.rainfall,
           temperature_change_c: scenario.temperature,
         },
@@ -475,14 +641,6 @@ export default function AnnualPlanPage() {
   const invalidatePlan = () => {
     void queryClient.invalidateQueries({ queryKey: ['crop-plan', farmId, year] });
   };
-
-  // Build a set of month numbers that already have a saved entry
-  const savedMonths = new Set(
-    (cropPlan.data?.entries ?? []).map((e) => {
-      const d = new Date(e.planting_date);
-      return d.getUTCMonth() + 1;
-    }),
-  );
 
   // Derive snapshotId from the decision-support response data_mode
   // (data_mode !== 'demonstration' means a snapshot is backing the response)
@@ -533,13 +691,100 @@ export default function AnnualPlanPage() {
   };
 
   const timeline = cropPlan.data?.timeline ?? [];
-  const selectedActivity = timeline.find((item) => item.month === month) ?? null;
-  const plannedCrops = new Set(timeline.filter((item) => item.stage === 'planting').map((item) => item.season_id)).size;
+  const selectedActivity = timeline.find((item) => item.month === activeMonth) ?? null;
+  const cycleMap = new Map<string, typeof timeline>();
+  timeline.forEach((item) => {
+    if (!item.season_id || !item.crop_name || item.stage === 'recovery') return;
+    const cycle = cycleMap.get(item.season_id) ?? [];
+    cycle.push(item);
+    cycleMap.set(item.season_id, cycle);
+  });
+  const cycles = Array.from(cycleMap.entries()).map(([seasonId, items]) => {
+    const ordered = [...items].sort((a, b) => a.month - b.month);
+    const planting = ordered.find((item) => item.stage === 'planting') ?? ordered[0];
+    const scoreItem = ordered.find((item) => item.suitability_index !== null) ?? planting;
+    const savedEntry = (cropPlan.data?.entries ?? []).find((entry) => {
+      if (seasonId === `saved-${entry.id}`) return true;
+      if (entry.crop_name !== planting.crop_name) return false;
+      const entryStart = new Date(entry.planting_date).getUTCMonth() + 1;
+      const entryEnd = new Date(entry.harvest_date).getUTCMonth() + 1;
+      return entryStart <= ordered[ordered.length - 1].month && entryEnd >= ordered[0].month;
+    });
+    const durationMonths = planting.duration_months ?? ordered.length;
+    const plantingDate = savedEntry
+      ? new Date(`${savedEntry.planting_date}T00:00:00Z`)
+      : monthDate(year, planting.plant_month ?? ordered[0].month);
+    const harvestDate = savedEntry
+      ? new Date(`${savedEntry.harvest_date}T00:00:00Z`)
+      : monthDate(year, (planting.plant_month ?? ordered[0].month) + durationMonths - 1);
+    return {
+      seasonId,
+      cropName: planting.crop_name!,
+      startMonth: ordered[0].month,
+      endMonth: ordered[ordered.length - 1].month,
+      score: scoreItem.suitability_index,
+      reason: planting.reason ?? (planting.saved ? 'Saved in your farm calendar' : 'Strong seasonal match'),
+      saved: ordered.some((item) => item.saved) || Boolean(savedEntry),
+      continuesNextYear: ordered.some((item) => item.continues_next_year),
+      durationMonths,
+      plantingDate,
+      harvestDate,
+    };
+  });
+  const plannedCrops = cycles.length;
   const harvests = timeline.filter((item) => item.stage === 'harvest').length;
-  const recoveryPeriods = timeline.filter((item) => item.stage === 'recovery').length;
+  const plannedMonths = new Set(timeline.map((item) => item.month)).size;
+  const today = new Date();
+  const currentMonth = today.getMonth() + 1;
+  const datedCycles = cycles.map((cycle) => ({
+    ...cycle,
+    status: cycle.saved
+      ? today < cycle.plantingDate
+        ? 'upcoming'
+        : today <= cycle.harvestDate
+          ? 'current'
+          : 'completed'
+      : 'upcoming',
+  }));
+  const statusCycle = datedCycles.find((cycle) => cycle.status === 'current')
+    ?? datedCycles.find((cycle) => cycle.status === 'upcoming' && cycle.harvestDate >= today)
+    ?? null;
+  const selectedCycle = datedCycles.find((cycle) => activeMonth >= cycle.startMonth && activeMonth <= cycle.endMonth) ?? null;
+  const statusHeading = statusCycle?.status === 'current' ? 'Currently growing' : 'Next crop';
+  const statusAction = statusCycle?.status === 'current'
+    ? today.getTime() === statusCycle.harvestDate.getTime()
+      ? `Harvest ${statusCycle.cropName}`
+      : `Monitor ${statusCycle.cropName} growth`
+    : statusCycle
+      ? `Prepare the field for ${statusCycle.cropName}`
+      : 'Keep monitoring the field';
+  const selectedScore = selectedCycle?.score ?? selectedActivity?.suitability_index;
+  const selectedHarvestDate = selectedCycle?.harvestDate ?? null;
+  const cycleHref = (seasonId: string, startMonth: number) =>
+    `/app/farms/${farmId}/annual-plan?season=${encodeURIComponent(seasonId)}&month=${startMonth}`;
+
+  if (requestedSeason) {
+    if (plan.isPending || cropPlan.isPending) {
+      return <div className="decision-page annual-planner-page"><Skeleton className="h-96 w-full rounded-2xl" /></div>;
+    }
+    if (plan.isError) {
+      return <div className="decision-page annual-planner-page"><ApiErrorState error={plan.error} onRetry={() => void plan.refetch()} /></div>;
+    }
+    if (cropPlan.isError) {
+      return <div className="decision-page annual-planner-page"><ApiErrorState error={cropPlan.error} onRetry={() => void cropPlan.refetch()} /></div>;
+    }
+    const growingCycle = datedCycles.find((cycle) => cycle.seasonId === requestedSeason);
+    if (!growingCycle || !plan.data) {
+      return <div className="decision-page annual-planner-page growing-plan-not-found"><h1>Crop plan not found.</h1><Link href={`/app/farms/${farmId}/annual-plan`}><ArrowLeft /> Back to Annual Plan</Link></div>;
+    }
+    const orderedCycles = [...datedCycles].sort((a, b) => a.plantingDate.getTime() - b.plantingDate.getTime());
+    const cycleIndex = orderedCycles.findIndex((cycle) => cycle.seasonId === growingCycle.seasonId);
+    const nextCycle = cycleIndex >= 0 ? orderedCycles[cycleIndex + 1] ?? null : null;
+    return <GrowingPlan farmId={farmId} cycle={growingCycle} nextCycle={nextCycle} risk={plan.data.selected_month.main_risk} onNavigateCycle={setMonth} />;
+  }
 
   return (
-    <div className="decision-page content-stack">
+    <div className="decision-page annual-planner-page content-stack">
       <Link className="back-link" href={`/app/farms/${farmId}/twin`}>
         <ArrowLeft /> Back to farm
       </Link>
@@ -547,7 +792,7 @@ export default function AnnualPlanPage() {
         <div>
           <p className="section-kicker">{plan.data?.farm_name ?? 'Annual planning'}</p>
           <h1>Your Annual Farm Plan</h1>
-          <p>See when to plant, grow, harvest, and rotate crops throughout the year.</p>
+          <p>What to grow, when to grow it, and what to do throughout the year.</p>
         </div>
       </header>
 
@@ -591,11 +836,25 @@ export default function AnnualPlanPage() {
           {cropPlan.data && (
             <>
               <div className="planner-sequence-summary" aria-label="Annual plan summary">
-                <span><strong>{plannedCrops}</strong>Crops planned</span>
-                <span><strong>{harvests}</strong>Harvests</span>
-                <span><strong>{recoveryPeriods}</strong>Recovery periods</span>
-                <span><strong>{timeline.length}/12</strong>Months planned</span>
+                <span><strong>🌱 {plannedCrops}</strong>{plannedCrops === 1 ? 'Crop planned' : 'Crops planned'}</span>
+                <span><strong>🌾 {harvests}</strong>Harvests this year</span>
+                <span><strong>📅 {plannedMonths}/12</strong>{plannedMonths === 12 ? 'Full year covered' : 'Months covered'}</span>
               </div>
+              {statusCycle && (
+                <section className="planner-current-status" aria-label="Current farm status">
+                  <div>
+                    <span>{statusHeading}</span>
+                    <strong>{statusCycle.cropName}{statusCycle.saved ? <em>Saved</em> : null}</strong>
+                    <small>{statusCycle.status === 'current' ? 'Started' : 'Plant'}: {formatMonthYear(statusCycle.plantingDate)}</small>
+                    <small>Expected harvest: {formatMonthYear(statusCycle.harvestDate)}</small>
+                  </div>
+                  <div>
+                    <span>Next action</span>
+                    <strong>{statusAction}</strong>
+                    {statusCycle.status === 'current' && <small>Expected harvest: {formatMonthYear(statusCycle.harvestDate)}</small>}
+                  </div>
+                </section>
+              )}
               <div className="annual-plan-workspace">
                 <section className="annual-months-grid" aria-labelledby="year-title">
                   <div className="section-heading-row">
@@ -605,36 +864,50 @@ export default function AnnualPlanPage() {
                     </div>
                     <p>Follow the field from planting through harvest and into the next crop.</p>
                   </div>
-                  {timeline.length === 0 ? (
+                  {cycles.length === 0 ? (
                     <div className="planner-sequence-empty">A sequential plan is not available for these conditions.</div>
                   ) : (
-                    <div className="planner-month-grid planner-sequence-grid">
-                      {timeline.map((item) => (
+                    <>
+                    <div className="planner-year-timeline workspace-card">
+                      <div className="planner-year-months">
+                        {MONTH_NAMES.map((name, index) => <span key={name} data-current={index + 1 === currentMonth || undefined}>{name.slice(0, 3)}{index + 1 === currentMonth && <small>Today</small>}</span>)}
+                      </div>
+                      <div className="planner-year-cycles">
+                      {datedCycles.map((cycle) => (
                         <button
-                          key={item.month}
+                          key={cycle.seasonId}
                           type="button"
-                          className="planner-month-card workspace-card"
-                          data-active={item.month === month || undefined}
-                          data-stage={item.stage}
-                          data-season={item.season_id ?? undefined}
-                          data-saved={savedMonths.has(item.month) || undefined}
-                          onClick={() => setMonth(item.month)}
-                          aria-pressed={item.month === month}
-                          aria-label={`${item.month_name}: ${item.crop_name ?? 'Field recovery'}, ${item.stage}`}
+                          className="planner-cycle-block"
+                          data-active={month >= cycle.startMonth && month <= cycle.endMonth || undefined}
+                          data-saved={cycle.saved || undefined}
+                          style={{ gridColumn: `${cycle.startMonth} / span ${cycle.endMonth - cycle.startMonth + 1}` }}
+                          onClick={() => setMonth(cycle.startMonth)}
+                          aria-pressed={month >= cycle.startMonth && month <= cycle.endMonth}
+                          aria-label={`${cycle.cropName}, ${MONTH_NAMES[cycle.startMonth - 1]} to ${MONTH_NAMES[cycle.endMonth - 1]}`}
                         >
-                          <div className="planner-month-header">
-                            <span className="planner-month-name">{item.month_name.slice(0, 3)}</span>
-                            {savedMonths.has(item.month) && <span className="planner-saved-indicator" aria-label="Saved entry"><CheckCircle /></span>}
-                          </div>
-                          <div className="planner-month-visual"><CropVisual cropName={item.crop_name ?? ''} /></div>
-                          <div className="planner-month-info">
-                            <strong className="planner-crop-name">{item.crop_name ?? 'Field recovery'}</strong>
-                            <span className="planner-stage-badge" data-stage={item.stage}>{item.stage}</span>
-                            {item.stage === 'planting' && item.suitability_index !== null && <small>{item.suitability_index}% suitability</small>}
-                          </div>
+                          <CropVisual cropName={cycle.cropName} />
+                          <span><strong>{cycle.cropName}</strong><small>{formatMonthYear(cycle.plantingDate, true)} → {formatMonthYear(cycle.harvestDate, true)}</small><small>{cycle.score ?? '—'}% match</small></span>
+                          {cycle.harvestDate.getUTCFullYear() > year && <b aria-label={`Continues into ${cycle.harvestDate.getUTCFullYear()}`}>→</b>}
+                          {cycle.saved && <CheckCircle aria-label="Saved entry" />}
                         </button>
                       ))}
+                      </div>
                     </div>
+                    <section className="planner-crops-section" aria-labelledby="your-crops-title">
+                      <div><h2 id="your-crops-title">Your crops</h2><p>Recommended crop cycles in this plan.</p></div>
+                    <div className="planner-crop-cards">
+                      {datedCycles.map((cycle) => (
+                        <article className="workspace-card planner-crop-summary" key={`card-${cycle.seasonId}`}>
+                          <CropVisual cropName={cycle.cropName} />
+                          <div><strong>{cycle.cropName}</strong><span>{formatMonthYear(cycle.plantingDate)} – {formatMonthYear(cycle.harvestDate)}</span></div>
+                          <b>{cycle.score ?? '—'}% match</b>
+                          <p>{cycle.reason}</p>
+                          <Link href={cycleHref(cycle.seasonId, cycle.startMonth)} onClick={() => setMonth(cycle.startMonth)}>View {cycle.cropName} plan →</Link>
+                        </article>
+                      ))}
+                    </div>
+                    </section>
+                    </>
                   )}
                 </section>
 
@@ -645,15 +918,15 @@ export default function AnnualPlanPage() {
                       <p className="planner-detail-month-label">{selectedActivity?.month_name ?? plan.data.selected_month.month}</p>
                       <h2 id="month-detail-title" className="planner-detail-crop-title">{selectedActivity?.crop_name ?? 'Field recovery'}</h2>
                       {selectedActivity && <span className="planner-stage-badge" data-stage={selectedActivity.stage}>{selectedActivity.stage}</span>}
-                      {selectedActivity?.stage === 'planting' && selectedActivity.suitability_index !== null && <div className="planner-detail-score"><span className="planner-score-value">{selectedActivity.suitability_index}%</span><span className="planner-score-label">environmental suitability</span></div>}
+                      {selectedScore !== null && selectedScore !== undefined && <div className="planner-detail-score"><span className="planner-score-value">{selectedScore}%</span><span className="planner-score-label">match</span></div>}
                     </div>
                   </div>
                   <div className="planner-metrics-grid">
                     <div className="planner-metric-item"><CloudRain className="planner-metric-icon" /><div className="planner-metric-content"><small>Expected rainfall</small><strong>{plan.data.selected_month.expected_rainfall_mm} mm</strong></div></div>
                     <div className="planner-metric-item"><ThermometerSun className="planner-metric-icon" /><div className="planner-metric-content"><small>Expected temperature</small><strong>{plan.data.selected_month.expected_temperature_c}°C</strong></div></div>
-                    <div className="planner-metric-item"><CalendarDays className="planner-metric-icon" /><div className="planner-metric-content"><small>Expected harvest</small><strong>{selectedActivity?.harvest_month ? new Intl.DateTimeFormat(undefined, { month: 'long' }).format(new Date(year, selectedActivity.harvest_month - 1, 1)) : selectedActivity?.continues_next_year ? 'Continues next year' : '—'}</strong></div></div>
-                    <div className="planner-metric-item"><TriangleAlert className="planner-metric-icon" /><div className="planner-metric-content"><small>Main risk</small><strong>{plan.data.selected_month.main_risk}</strong></div></div>
-                    {selectedActivity?.duration_months && <div className="planner-metric-item"><CalendarDays className="planner-metric-icon" /><div className="planner-metric-content"><small>Duration</small><strong>{selectedActivity.duration_months} months</strong></div></div>}
+                    <div className="planner-metric-item"><CalendarDays className="planner-metric-icon" /><div className="planner-metric-content"><small>Expected harvest</small><strong>{selectedHarvestDate ? formatMonthYear(selectedHarvestDate, true) : '—'}</strong></div></div>
+                    <div className="planner-metric-item"><TriangleAlert className="planner-metric-icon" /><div className="planner-metric-content"><small>Main risk</small><strong>{farmerFriendlyRisk(plan.data.selected_month.main_risk)}</strong></div></div>
+                    {selectedActivity?.duration_months && <div className="planner-metric-item"><CalendarDays className="planner-metric-icon" /><div className="planner-metric-content"><small>Growing time</small><strong>{selectedActivity.duration_months} months</strong></div></div>}
                     {selectedActivity?.previous_crop && <div className="planner-metric-item"><Info className="planner-metric-icon" /><div className="planner-metric-content"><small>Previous crop</small><strong>{selectedActivity.previous_crop}</strong></div></div>}
                   </div>
                   {selectedActivity?.reason && <div className="planner-tip-card"><Info className="planner-tip-icon" /><div className="planner-tip-content"><strong>Why this crop now?</strong><p>{selectedActivity.reason}</p></div></div>}
@@ -665,6 +938,11 @@ export default function AnnualPlanPage() {
                   )}
                 </aside>
               </div>
+
+              <details className="workspace-card planner-why-plan">
+                <summary><span>💡</span><strong>Why this plan?</strong><small>{cropPlan.data.explanation ?? 'FarmTwin balanced crop conditions, growing time, your calendar and crop rotation.'}</small></summary>
+                <div><span>✓ Strong crop matches</span><span>✓ No calendar conflicts</span><span>✓ Better crop variety</span><span>⚠ Weather and water remain the main constraints to watch</span></div>
+              </details>
 
               {cropPlan.data.perennial_opportunities.length > 0 && (
                 <section className="workspace-card planner-perennial-section" aria-labelledby="perennial-title">

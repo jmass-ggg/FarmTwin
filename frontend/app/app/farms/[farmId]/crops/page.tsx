@@ -652,6 +652,13 @@ export default function CropSimulatorPage() {
                   result={selectedResult}
                   cropEntry={selectedCropEntry}
                   planHref={`/app/farms/${farmId}/annual-plan?crop=${encodeURIComponent(selectedResult.crop_name)}&month=${Number(plantingDate.slice(5, 7))}`}
+                  farmId={farmId}
+                  simulateRequest={{
+                    crop_name: selectedResult.crop_name,
+                    planting_date: plantingDate,
+                    cultivation_mode: cultivationMode,
+                    irrigation_mm: cultivationMode === 'irrigated' ? irrigationMm : undefined,
+                  }}
                 />
               ) : (
                 <div className="crop-detail-empty">

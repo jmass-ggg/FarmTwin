@@ -198,6 +198,7 @@ class TimelineItemResponse(ReadBaseSchema):
     continues_next_year: bool = False
     data_mode: str
     snapshot_id: str | None = None
+    saved: bool = False
 
 
 class PerennialOpportunityResponse(ReadBaseSchema):
@@ -236,6 +237,12 @@ class AnnualPlanResponse(ReadBaseSchema):
     )
     proposals: list[ChangeProposalResponse] = Field(
         description="Pending Change_Proposals for this farm"
+    )
+    solver_status: str = Field(default="not_run", description="Internal plan-generation status")
+    fallback_used: bool = Field(default=False, description="Whether deterministic fallback generated the plan")
+    explanation: str = Field(
+        default="FarmTwin balanced crop conditions, growing time, your calendar and crop rotation.",
+        description="Short deterministic farmer explanation",
     )
 
 

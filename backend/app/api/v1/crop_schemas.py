@@ -169,3 +169,54 @@ class CropListResponse(ReadBaseSchema):
     crops: list[CropEntry] = Field(description="All crops in the register")
     register_version: str = Field(description="Register version string")
     last_updated: str = Field(description="Register last_updated date (ISO 8601)")
+
+
+# ---------------------------------------------------------------------------
+# AI Explanation Response
+# ---------------------------------------------------------------------------
+
+
+class CropExplanationFactorResponse(ReadBaseSchema):
+    """A single strength or concern about the crop."""
+
+    factor: str = Field(description="Component name (e.g., 'Temperature', 'Water')")
+    message: str = Field(description="Explanation of why this is a strength or concern")
+
+
+class CropExplanationResponse(ReadBaseSchema):
+    """Farmer-friendly AI-generated explanation of crop suitability."""
+
+    headline: str = Field(description="Short headline summarizing the assessment")
+    summary: str = Field(description="Brief summary of the crop's suitability")
+    strengths: list[CropExplanationFactorResponse] = Field(
+        description="Positive factors (max 2)"
+    )
+    concerns: list[CropExplanationFactorResponse] = Field(
+        description="Limiting factors (max 2)"
+    )
+    action: str | None = Field(
+        default=None,
+        description="Actionable suggestion for the farmer (optional)",
+    )
+    data_note: str | None = Field(
+        default=None,
+        description="Note about missing or incomplete data (optional)",
+    )
+    source: str = Field(
+        description="Explanation source: 'ai' or 'deterministic_fallback'"
+    )
+    cached: bool = Field(description="Whether this explanation was retrieved from cache")
+
+
+class CropExplanationFullResponse(ReadBaseSchema):
+    """Full response including crop score and AI explanation."""
+
+    crop_name: str = Field(description="Crop name")
+    suitability_index: int | None = Field(
+        description="Overall suitability score (0-100)", ge=0, le=100
+    )
+    label: str = Field(description="Suitability label")
+    explanation: CropExplanationResponse = Field(
+        description="AI-generated farmer-friendly explanation"
+    )
+

@@ -46,6 +46,7 @@ const {
 vi.mock('next/navigation', () => ({
   useParams: () => ({ farmId: 'farm-001' }),
   useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock('@/lib/api/planner', async (importOriginal) => {
@@ -193,6 +194,7 @@ function makeProposal(overrides: Partial<import('@/lib/api/planner').ChangePropo
 
 describe('AnnualPlanPage', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/app/farms/farm-001/annual-plan');
     calculateDecisionSupport.mockResolvedValue(makeDecisionSupportResponse());
     getAnnualPlan.mockResolvedValue(makeAnnualPlanResponse());
     createPlanEntry.mockResolvedValue(makePlanEntry());
@@ -343,6 +345,59 @@ describe('AnnualPlanPage', () => {
       await user.click(screen.getByRole('button', { name: /Accept/i }));
 
       await waitFor(() => expect(acceptChangeProposal).toHaveBeenCalledWith('farm-001', 'proposal-1'));
+    });
+  });
+
+  describe('crop cycle status and navigation', () => {
+    it('uses a distinct season and month in every crop-plan link', async () => {
+      renderWithClient(<AnnualPlanPage />);
+
+      const links = await screen.findAllByRole('link', { name: 'View Maize plan →' });
+      expect(links).toHaveLength(3);
+      expect(links.map((link) => link.getAttribute('href'))).toEqual([
+        '/app/farms/farm-001/annual-plan?season=maize-1&month=1',
+        '/app/farms/farm-001/annual-plan?season=maize-2&month=5',
+        '/app/farms/farm-001/annual-plan?season=maize-3&month=9',
+      ]);
+    });
+
+    it('treats an unsaved recommendation as the next crop instead of currently growing', async () => {
+      renderWithClient(<AnnualPlanPage />);
+
+      await screen.findByRole('heading', { name: 'Your crop sequence' });
+      expect(screen.getByText('Next crop')).toBeInTheDocument();
+      expect(screen.queryByText('Currently growing')).not.toBeInTheDocument();
+      expect(screen.getByText('Prepare the field for Maize')).toBeInTheDocument();
+    });
+
+    it('shows the calculated cross-year harvest date without overflowing the current year', async () => {
+      const response = makeAnnualPlanResponse();
+      response.timeline = [9, 10, 11, 12].map((month, index) => ({
+        ...response.timeline[month - 1],
+        month,
+        month_name: MONTH_NAMES[month - 1],
+        crop_name: 'Wheat',
+        season_id: 'wheat-autumn',
+        stage: index === 0 ? 'planting' : 'growing',
+        action: index === 0 ? 'plant' : 'continue',
+        suitability_index: index === 0 ? 91 : null,
+        planning_score: index === 0 ? 91 : null,
+        plant_month: 9,
+        harvest_month: null,
+        duration_months: 5,
+        continues_next_year: true,
+      }));
+      getAnnualPlan.mockResolvedValue(response);
+
+      renderWithClient(<AnnualPlanPage />);
+
+      const year = new Date().getFullYear();
+      expect(await screen.findByText(`Sep ${year} → Jan ${year + 1}`)).toBeInTheDocument();
+      expect(screen.getByLabelText(`Continues into ${year + 1}`)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'View Wheat plan →' })).toHaveAttribute(
+        'href',
+        '/app/farms/farm-001/annual-plan?season=wheat-autumn&month=9',
+      );
     });
   });
 });

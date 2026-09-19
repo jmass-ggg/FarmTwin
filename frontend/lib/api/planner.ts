@@ -58,6 +58,9 @@ export interface AnnualPlanResponse {
   perennial_opportunities: PerennialOpportunity[];
   entries: PlanEntryResponse[];
   proposals: ChangeProposalResponse[];
+  solver_status?: string;
+  fallback_used?: boolean;
+  explanation?: string;
 }
 
 export interface PlanTimelineItem {
@@ -79,6 +82,7 @@ export interface PlanTimelineItem {
   continues_next_year: boolean;
   data_mode: string;
   snapshot_id: string | null;
+  saved?: boolean;
 }
 
 export interface PerennialOpportunity {
