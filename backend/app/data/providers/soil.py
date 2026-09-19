@@ -26,6 +26,7 @@ Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -48,7 +49,10 @@ logger = logging.getLogger(__name__)
 
 SOILGRIDS_URL = "https://rest.isric.org/soilgrids/v2.0/properties/query"
 SOURCE_NAME = "soilgrids-v2"
-REQUEST_TIMEOUT_SECONDS = 60.0
+REQUEST_TIMEOUT_SECONDS = 20.0
+MAX_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 0.25
+RETRYABLE_STATUS_CODES = frozenset({502, 503, 504})
 
 # Nominal spatial resolution of SoilGrids (metres)
 RESOLUTION_M = 250
@@ -260,6 +264,15 @@ def _build_soil_payload(
     }
 
 
+def _has_usable_mean(payload: dict) -> bool:
+    """Return true when at least one requested property has a real mean value."""
+    return any(
+        prop_data.get("mean", {}).get("value") is not None
+        for depth_data in payload.get("depths", {}).values()
+        for prop_data in depth_data.values()
+    )
+
+
 def _build_unavailable_payload(retrieved_at: str, data_mode: str) -> dict:
     """Build a payload signalling soil data is unavailable.
 
@@ -338,29 +351,44 @@ async def fetch(
         "value": _STAT_KEYS,
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            response = await client.get(SOILGRIDS_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
-    except httpx.TimeoutException as exc:
-        msg = f"SoilGrids request timed out after {REQUEST_TIMEOUT_SECONDS}s: {exc}"
-        logger.warning(msg)
-        return ProviderResult(
-            payload=_build_unavailable_payload(retrieved_at, data_mode),
-            evidence_status=EVIDENCE_UNAVAILABLE,
-            error_message=msg,
-        )
-    except httpx.HTTPStatusError as exc:
-        msg = f"SoilGrids returned HTTP {exc.response.status_code}"
-        logger.warning(msg)
-        return ProviderResult(
-            payload=_build_unavailable_payload(retrieved_at, data_mode),
-            evidence_status=EVIDENCE_UNAVAILABLE,
-            error_message=msg,
-        )
-    except Exception as exc:
-        msg = f"SoilGrids request failed: {exc}"
+    data: dict | None = None
+    last_error: str | None = None
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                response = await client.get(SOILGRIDS_URL, params=params)
+                response.raise_for_status()
+                decoded = response.json()
+                if not isinstance(decoded, dict):
+                    raise ValueError("response root is not a JSON object")
+                properties = decoded.get("properties")
+                if not isinstance(properties, dict):
+                    raise ValueError("response properties is not a JSON object")
+                layers = properties.get("layers")
+                if not isinstance(layers, list) or not layers:
+                    raise ValueError("response has no SoilGrids property layers")
+                data = decoded
+                break
+            except httpx.TimeoutException as exc:
+                last_error = f"SoilGrids request timed out after {REQUEST_TIMEOUT_SECONDS}s: {exc}"
+                retryable = True
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                last_error = f"SoilGrids returned HTTP {status_code}"
+                retryable = status_code in RETRYABLE_STATUS_CODES
+            except (TypeError, ValueError) as exc:
+                last_error = f"SoilGrids returned a malformed response: {exc}"
+                retryable = False
+            except Exception as exc:
+                last_error = f"SoilGrids request failed: {exc}"
+                retryable = False
+
+            if not retryable or attempt == MAX_ATTEMPTS:
+                break
+            await asyncio.sleep(RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1)))
+
+    if data is None:
+        msg = last_error or "SoilGrids request failed without an error message"
         logger.warning(msg)
         return ProviderResult(
             payload=_build_unavailable_payload(retrieved_at, data_mode),
@@ -368,7 +396,24 @@ async def fetch(
             error_message=msg,
         )
 
-    payload = _build_soil_payload(data, retrieved_at, data_mode, farm_area_ha)
+    try:
+        payload = _build_soil_payload(data, retrieved_at, data_mode, farm_area_ha)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        msg = f"SoilGrids returned a malformed response: {exc}"
+        logger.warning(msg)
+        return ProviderResult(
+            payload=_build_unavailable_payload(retrieved_at, data_mode),
+            evidence_status=EVIDENCE_UNAVAILABLE,
+            error_message=msg,
+        )
+    if not _has_usable_mean(payload):
+        msg = "SoilGrids response contained no usable mean property values"
+        logger.warning(msg)
+        return ProviderResult(
+            payload=payload,
+            evidence_status=EVIDENCE_UNAVAILABLE,
+            error_message=msg,
+        )
     return ProviderResult(
         payload=payload,
         evidence_status=EVIDENCE_ACCEPTED,

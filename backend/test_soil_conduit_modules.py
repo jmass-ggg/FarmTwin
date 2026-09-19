@@ -178,6 +178,10 @@ async def test_conduit_eligibility(location_key: str, location: dict) -> dict:
     """Test Conduit eligibility for a location."""
     from app.data.providers import conduit_eligibility
     from app.core.config import Settings
+    from app.models.conduit import Station
+    from shapely.geometry import Point
+    from unittest.mock import AsyncMock, MagicMock
+    import uuid
     
     settings = Settings()
     
@@ -195,23 +199,44 @@ async def test_conduit_eligibility(location_key: str, location: dict) -> dict:
     }
     
     try:
-        # Test eligibility (assuming farm elevation = station elevation for simplicity)
-        provider_result = await conduit_eligibility.assess(
-            farm_centroid_lat=location['lat'],
-            farm_centroid_lon=location['lon'],
-            farm_elevation_m=settings.conduit_station_elevation_m,
-            station_latitude=settings.conduit_station_latitude,
-            station_longitude=settings.conduit_station_longitude,
-            station_elevation_m=settings.conduit_station_elevation_m,
+        station = Station(
+            id=uuid.uuid4(),
+            provider_station_id="configured-diagnostic-station",
+            name="Configured diagnostic station",
+            latitude=settings.conduit_station_latitude,
+            longitude=settings.conduit_station_longitude,
+            elevation_m=settings.conduit_station_elevation_m,
+            provider="conduit",
+        )
+
+        stations_result = MagicMock()
+        stations_result.scalars.return_value.all.return_value = [station]
+        aggregate_result = MagicMock()
+        aggregate_result.scalar_one_or_none.return_value = None
+        session = MagicMock()
+        session.execute = AsyncMock(side_effect=[stations_result, aggregate_result])
+
+        # Use the adapter's real public API. No observation is fabricated: an
+        # eligible station is expected to report no recent aggregate here.
+        provider_result = await conduit_eligibility.fetch(
+            farm_centroid=Point(location['lon'], location['lat']),
+            session=session,
+            terrain_payload={
+                "mean_elevation_m": {"value": settings.conduit_station_elevation_m}
+            },
+            data_mode="historical_replay",
         )
         
-        result["eligible"] = provider_result.evidence_status == "accepted"
-        result["reason"] = provider_result.error_message
+        result["eligible"] = provider_result.evidence_status not in {"ineligible", "error"}
+        result["reason"] = (
+            (provider_result.payload or {}).get("eligibility_reason")
+            or provider_result.error_message
+        )
         
         # Extract distance and elevation from payload if available
         if provider_result.payload:
-            result["distance_km"] = provider_result.payload.get("station_distance_km")
-            result["elevation_diff_m"] = provider_result.payload.get("elevation_difference_m")
+            result["distance_km"] = provider_result.payload.get("distance_km")
+            result["elevation_diff_m"] = provider_result.payload.get("elevation_diff_m")
             
     except Exception as e:
         result["reason"] = f"Exception: {str(e)}"
@@ -239,8 +264,18 @@ async def run_conduit_tests():
     print("\nNote: Conduit uses historical replay mode with fixture data.")
     print("Testing eligibility checks only (live endpoint not configured).\n")
     
+    settings = __import__("app.core.config", fromlist=["Settings"]).Settings()
+    locations = {
+        "Near_station": {
+            "lat": settings.conduit_station_latitude + 0.01,
+            "lon": settings.conduit_station_longitude + 0.01,
+            "name": "Near configured station",
+        },
+        "Eldoret_Kenya": TEST_LOCATIONS["Eldoret_Kenya"],
+        "Kathmandu_Nepal": TEST_LOCATIONS["Kathmandu_Nepal"],
+    }
     results = []
-    for location_key, location in TEST_LOCATIONS.items():
+    for location_key, location in locations.items():
         result = await test_conduit_eligibility(location_key, location)
         results.append(result)
         print(f"\n{location['name']}")

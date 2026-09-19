@@ -69,6 +69,34 @@ def _make_async_client(mock_response: MagicMock) -> MagicMock:
     return mock_async_cm
 
 
+def _soilgrids_response(*, missing_property: str | None = None, null_property: str | None = None, missing_q95: str | None = None) -> dict:
+    raw = {
+        "bdod": {"mean": 132, "Q0.05": 110, "Q0.95": 151},
+        "clay": {"mean": 274, "Q0.05": 190, "Q0.95": 360},
+        "sand": {"mean": 421, "Q0.05": 330, "Q0.95": 510},
+        "silt": {"mean": 305, "Q0.05": 240, "Q0.95": 380},
+        "phh2o": {"mean": 63, "Q0.05": 55, "Q0.95": 71},
+        "soc": {"mean": 187, "Q0.05": 102, "Q0.95": 273},
+    }
+    layers = []
+    for prop, values in raw.items():
+        if prop == missing_property:
+            continue
+        prop_values = dict(values)
+        if prop == null_property:
+            prop_values["mean"] = None
+        if prop == missing_q95:
+            prop_values.pop("Q0.95")
+        layers.append({
+            "name": prop,
+            "depths": [
+                {"label": "0-5cm", "values": prop_values},
+                {"label": "5-15cm", "values": prop_values},
+            ],
+        })
+    return {"type": "Point", "properties": {"layers": layers}}
+
+
 # ---------------------------------------------------------------------------
 # Soil adapter — unavailable provider
 # ---------------------------------------------------------------------------
@@ -135,6 +163,86 @@ async def test_soil_unavailable_on_timeout():
             assert prop_data["mean"]["value"] is None
 
 
+@pytest.mark.asyncio
+async def test_soil_valid_response_parses_and_scales_all_properties():
+    mock_resp = _make_mock_response(200, _soilgrids_response())
+    with patch("httpx.AsyncClient", return_value=_make_async_client(mock_resp)):
+        result = await soil.fetch(0.5143, 35.2698, 1.0, "live")
+
+    assert result.evidence_status == EVIDENCE_ACCEPTED
+    topsoil = result.payload["depths"]["0_5cm"]
+    assert topsoil["phh2o"]["mean"]["value"] == 6.3
+    assert topsoil["clay"]["mean"]["value"] == 27.4
+    assert topsoil["sand"]["mean"]["value"] == 42.1
+    assert topsoil["silt"]["mean"]["value"] == 30.5
+    assert topsoil["soc"]["mean"]["value"] == 18.7
+    assert topsoil["bdod"]["mean"]["value"] == 1.32
+    assert topsoil["phh2o"]["uncertainty_5th_percentile"]["value"] == 5.5
+    assert topsoil["phh2o"]["uncertainty_95th_percentile"]["value"] == 7.1
+
+
+@pytest.mark.asyncio
+async def test_soil_missing_property_remains_null_not_zero():
+    mock_resp = _make_mock_response(200, _soilgrids_response(missing_property="soc"))
+    with patch("httpx.AsyncClient", return_value=_make_async_client(mock_resp)):
+        result = await soil.fetch(0.5143, 35.2698)
+
+    assert result.evidence_status == EVIDENCE_ACCEPTED
+    soc = result.payload["depths"]["0_5cm"]["soc"]
+    assert soc["mean"]["value"] is None
+    assert soc["mean"]["quality"] == EVIDENCE_UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_soil_null_mean_remains_unavailable():
+    mock_resp = _make_mock_response(200, _soilgrids_response(null_property="clay"))
+    with patch("httpx.AsyncClient", return_value=_make_async_client(mock_resp)):
+        result = await soil.fetch(0.5143, 35.2698)
+
+    clay = result.payload["depths"]["0_5cm"]["clay"]
+    assert clay["mean"]["value"] is None
+    assert clay["mean"]["quality"] == EVIDENCE_UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_soil_missing_uncertainty_is_none():
+    mock_resp = _make_mock_response(200, _soilgrids_response(missing_q95="sand"))
+    with patch("httpx.AsyncClient", return_value=_make_async_client(mock_resp)):
+        result = await soil.fetch(0.5143, 35.2698)
+
+    assert result.evidence_status == EVIDENCE_ACCEPTED
+    assert result.payload["depths"]["0_5cm"]["sand"]["uncertainty_95th_percentile"] is None
+
+
+@pytest.mark.asyncio
+async def test_soil_malformed_response_is_unavailable_not_exception():
+    mock_resp = _make_mock_response(200, {"properties": {"layers": "invalid"}})
+    with patch("httpx.AsyncClient", return_value=_make_async_client(mock_resp)):
+        result = await soil.fetch(0.5143, 35.2698)
+
+    assert result.evidence_status == EVIDENCE_UNAVAILABLE
+    assert "malformed" in result.error_message
+    assert result.payload["depths"]["0_5cm"]["phh2o"]["mean"]["value"] is None
+
+
+@pytest.mark.asyncio
+async def test_soil_retries_503_then_succeeds():
+    client = MagicMock()
+    client.get = AsyncMock(side_effect=[
+        _make_mock_response(503),
+        _make_mock_response(503),
+        _make_mock_response(200, _soilgrids_response()),
+    ])
+    async_cm = MagicMock()
+    async_cm.__aenter__ = AsyncMock(return_value=client)
+    async_cm.__aexit__ = AsyncMock(return_value=False)
+    with patch("httpx.AsyncClient", return_value=async_cm), patch("asyncio.sleep", new=AsyncMock()):
+        result = await soil.fetch(0.5143, 35.2698)
+
+    assert result.evidence_status == EVIDENCE_ACCEPTED
+    assert client.get.await_count == 3
+
+
 # ---------------------------------------------------------------------------
 # Soil adapter — small farm flag
 # ---------------------------------------------------------------------------
@@ -145,7 +253,7 @@ async def test_soil_small_farm_flag_when_below_cell_size():
 
     Requirements: 5.6
     """
-    mock_response_data = {"type": "Point", "properties": {"layers": []}}
+    mock_response_data = _soilgrids_response()
     mock_resp = _make_mock_response(200, json_data=mock_response_data)
 
     with patch("httpx.AsyncClient", return_value=_make_async_client(mock_resp)):
@@ -167,7 +275,7 @@ async def test_soil_no_small_farm_flag_when_above_cell_size():
 
     Requirements: 5.6
     """
-    mock_response_data = {"type": "Point", "properties": {"layers": []}}
+    mock_response_data = _soilgrids_response()
     mock_resp = _make_mock_response(200, json_data=mock_response_data)
 
     with patch("httpx.AsyncClient", return_value=_make_async_client(mock_resp)):
