@@ -400,4 +400,49 @@ describe('AnnualPlanPage', () => {
       );
     });
   });
+
+  describe('Growing Plan mode', () => {
+    it('opens the exact cycle from a direct season URL and returns to the overview', async () => {
+      window.history.replaceState({}, '', '/app/farms/farm-001/annual-plan?season=maize-2&month=5');
+      renderWithClient(<AnnualPlanPage />);
+
+      expect(await screen.findByRole('heading', { name: 'Your Maize Growing Plan' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Back to Annual Plan' })).toHaveAttribute(
+        'href',
+        '/app/farms/farm-001/annual-plan',
+      );
+      expect(screen.getByText(`May ${new Date().getFullYear()}`, { selector: 'dd' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Your Annual Farm Plan' })).not.toBeInTheDocument();
+    });
+
+    it.each(['Soybean', 'Tomato'])('reuses the Growing Plan UI for %s', async (cropName) => {
+      const response = makeAnnualPlanResponse();
+      response.timeline = response.timeline.slice(0, 4).map((item) => ({
+        ...item,
+        crop_name: cropName,
+        season_id: `${cropName.toLowerCase()}-spring`,
+      }));
+      getAnnualPlan.mockResolvedValue(response);
+      window.history.replaceState({}, '', `/app/farms/farm-001/annual-plan?season=${cropName.toLowerCase()}-spring&month=1`);
+
+      renderWithClient(<AnnualPlanPage />);
+
+      expect(await screen.findByRole('heading', { name: `Your ${cropName} Growing Plan` })).toBeInTheDocument();
+      expect(screen.getByLabelText(`${cropName} cycle summary`)).toBeInTheDocument();
+      const summary = screen.getByLabelText(`${cropName} cycle summary`);
+      expect(summary.querySelector('img')).toHaveAttribute('src', expect.stringContaining(cropName === 'Tomato' ? 'tomatos.png' : 'soyabean.png'));
+      expect(screen.getByRole('heading', { name: 'What happens next' })).toBeInTheDocument();
+    });
+
+    it('shows a safe not-found state for an invalid season', async () => {
+      window.history.replaceState({}, '', '/app/farms/farm-001/annual-plan?season=missing-cycle&month=9');
+      renderWithClient(<AnnualPlanPage />);
+
+      expect(await screen.findByRole('heading', { name: 'Crop plan not found.' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Back to Annual Plan' })).toHaveAttribute(
+        'href',
+        '/app/farms/farm-001/annual-plan',
+      );
+    });
+  });
 });

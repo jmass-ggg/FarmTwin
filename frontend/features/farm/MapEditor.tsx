@@ -268,7 +268,6 @@ export function MapEditor({
     : !closed ? null
     : distinctPointCount < 3 ? `Add at least ${3 - distinctPointCount} more boundary ${3 - distinctPointCount === 1 ? 'point' : 'points'}.`
     : !validationState.valid ? validationState.message
-    : requireBoundaryConfirmation && !boundaryConfirmed ? 'Tick the confirmation checkbox above.'
     : !hasUnsavedChanges ? null
     : isSaving ? 'Saving farm…' : null;
 

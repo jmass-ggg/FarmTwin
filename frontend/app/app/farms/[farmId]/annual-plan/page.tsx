@@ -103,10 +103,11 @@ function GrowingPlan({ farmId, cycle, nextCycle, risk, onNavigateCycle }: Growin
   const prepareDate = addUtcMonths(cycle.plantingDate, -1);
   const growDate = addUtcMonths(cycle.plantingDate, 1);
   const matureDate = addUtcMonths(cycle.harvestDate, -1);
+  const growEndDate = addUtcMonths(matureDate, -1);
   const stages = [
     { key: 'prepare', label: 'Prepare', start: prepareDate, end: cycle.plantingDate, display: formatMonthYear(prepareDate, true) },
     { key: 'plant', label: 'Plant', start: cycle.plantingDate, end: growDate, display: formatMonthYear(cycle.plantingDate, true) },
-    { key: 'grow', label: 'Grow', start: growDate, end: matureDate, display: growDate < matureDate ? `${formatMonthYear(growDate, true)}–${formatMonthYear(addUtcMonths(matureDate, -1), true)}` : formatMonthYear(growDate, true) },
+    { key: 'grow', label: 'Grow', start: growDate, end: matureDate, display: growDate < growEndDate ? `${formatMonthYear(growDate, true)}–${formatMonthYear(growEndDate, true)}` : formatMonthYear(growDate, true) },
     { key: 'mature', label: 'Mature', start: matureDate, end: cycle.harvestDate, display: formatMonthYear(matureDate, true) },
     { key: 'harvest', label: 'Harvest', start: cycle.harvestDate, end: addUtcMonths(cycle.harvestDate, 1), display: formatMonthYear(cycle.harvestDate, true) },
   ].map((stage) => ({
@@ -124,6 +125,8 @@ function GrowingPlan({ farmId, cycle, nextCycle, risk, onNavigateCycle }: Growin
     harvest: ['Check crop maturity', 'Prepare for harvest', 'Review the next crop'],
   };
   const stageTasks = tasks[activeStage.key];
+  const remainingStages = stages.filter((stage) => stage.status !== 'complete');
+  const nextStages = remainingStages.length > 0 ? remainingStages : [stages[stages.length - 1]];
   const stableConditions = farmerFriendlyRisk(risk) === 'No major climate risk';
   const qualityLabel = cycle.score == null
     ? 'Match pending'
@@ -179,7 +182,7 @@ function GrowingPlan({ farmId, cycle, nextCycle, risk, onNavigateCycle }: Growin
       <div className="growing-plan-two-column">
         <section className="workspace-card growing-plan-next-steps">
           <h2>What happens next</h2>
-          <ol>{stages.filter((stage) => stage.status !== 'complete').map((stage) => <li key={stage.key}><span>{stage.display}</span><strong>{stage.label === 'Grow' ? `Help ${cycle.cropName} grow` : stage.label === 'Plant' ? `Plant ${cycle.cropName}` : stage.label}</strong><small>{stage.status === 'current' ? 'Current' : 'Next'}</small></li>)}</ol>
+          <ol>{nextStages.map((stage) => <li key={stage.key}><span>{stage.display}</span><strong>{stage.label === 'Grow' ? `Help ${cycle.cropName} grow` : stage.label === 'Plant' ? `Plant ${cycle.cropName}` : stage.label}</strong><small>{stage.status === 'complete' ? 'Complete' : stage.status === 'current' ? 'Current' : 'Next'}</small></li>)}</ol>
         </section>
         <section className="workspace-card growing-plan-watch">
           <h2>Things to watch</h2>
@@ -736,7 +739,7 @@ export default function AnnualPlanPage() {
   const plannedMonths = new Set(timeline.map((item) => item.month)).size;
   const today = new Date();
   const currentMonth = today.getMonth() + 1;
-  const datedCycles = cycles.map((cycle) => ({
+  const datedCycles: CropCycleView[] = cycles.map((cycle) => ({
     ...cycle,
     status: cycle.saved
       ? today < cycle.plantingDate
