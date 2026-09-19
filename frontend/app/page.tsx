@@ -194,7 +194,6 @@ export default function Home() {
             
             <p className="redesigned-trust-line">
               <ShieldCheck aria-hidden="true" />
-              <span>Unknown data stays unknown. No invented farm readings.</span>
             </p>
           </div>
 
