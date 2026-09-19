@@ -40,6 +40,62 @@ from app.services.planner_optimizer import (
 logger = logging.getLogger(__name__)
 
 
+async def _generate_ai_explanation(
+    crop_name: str,
+    context: SnapshotContext,
+    month: int,
+    suitability_index: int,
+    limiting_factor: str | None,
+    previous_crop: str | None,
+    rotation_effect: str,
+    farm_id: str,
+) -> str:
+    """
+    Generate AI explanation for annual plan recommendation.
+    
+    Falls back to simple rotation reason on any failure.
+    """
+    try:
+        from app.services.ai.annual_plan_explanation_service import (
+            get_annual_plan_explanation_service,
+        )
+        
+        # Find crop in register
+        crop = next(
+            (c for c in CROP_REGISTER if c.name == crop_name),
+            None,
+        )
+        if crop is None:
+            return "Strong seasonal match"
+        
+        service = get_annual_plan_explanation_service()
+        explanation = await service.generate(
+            crop=crop,
+            context=context,
+            month=month,
+            month_name=calendar.month_name[month],
+            suitability_index=suitability_index,
+            limiting_factor=limiting_factor,
+            previous_crop=previous_crop,
+            rotation_effect=rotation_effect,
+            farm_id=farm_id,
+        )
+        return explanation.text
+    except Exception as exc:
+        logger.warning(
+            "Failed to generate AI explanation for %s in month %d: %s",
+            crop_name, month, exc,
+        )
+        # Fallback to simple rotation reason
+        if previous_crop and rotation_effect == "preferred":
+            return f"Good next crop after {previous_crop}"
+        elif rotation_effect == "same-crop penalty":
+            return "Strong seasonal match despite repeating the previous crop"
+        elif rotation_effect == "avoid":
+            return "Best available match for this planting window"
+        return "Strong seasonal match"
+
+
 # ---------------------------------------------------------------------------
 # Response dataclasses (lightweight, no ORM coupling)
 # ---------------------------------------------------------------------------
@@ -349,6 +405,12 @@ def _rotation_reason(
     cycle: CropCycleCandidate,
     previous: CropCycleCandidate | None,
 ) -> tuple[str, str]:
+    """
+    Return a simple rotation-based reason and rotation effect code.
+    
+    Note: This is now a fallback. The main annual plan generation uses
+    AI-generated explanations via _generate_ai_explanation.
+    """
     if previous is None:
         return "Strong seasonal match", "neutral"
     if previous.crop_name in cycle.preferred_after:
@@ -360,6 +422,118 @@ def _rotation_reason(
     if previous.family == cycle.family and cycle.family != "unknown":
         return "Strong seasonal match", "same-family penalty"
     return "Good crop variety with a strong seasonal match", "diverse"
+
+
+async def _cycles_to_timeline_with_ai(
+    cycles: tuple[CropCycleCandidate, ...],
+    saved_entries: list[PlanEntry],
+    year: int,
+    farm_id: str,
+    context_for: Callable[[int, CropRequirements], SnapshotContext],
+) -> list[TimelineItem]:
+    """
+    Convert optimized cycles plus fixed saved occupancy to the public timeline.
+    
+    Generates AI explanations for each planting event using actual environmental context.
+    """
+    by_month: dict[int, TimelineItem] = {}
+    for entry in saved_entries:
+        months = sorted(_entry_occupied_months(entry, year))
+        if not months:
+            continue
+        crop = next((item for item in CROP_REGISTER if item.name.casefold() == entry.crop_name.casefold()), None)
+        duration = crop.duration_months if crop else len(months)
+        for offset, month in enumerate(months):
+            is_planting = entry.planting_date.year == year and entry.planting_date.month == month
+            is_harvest = entry.harvest_date.year == year and entry.harvest_date.month == month
+            stage = "planting" if is_planting else "harvest" if is_harvest else "growing"
+            by_month.setdefault(month, TimelineItem(
+                month=month,
+                month_name=calendar.month_name[month],
+                crop_name=entry.crop_name,
+                stage=stage,
+                action="plant" if is_planting else "harvest" if is_harvest else "continue",
+                season_id=f"saved-{entry.id}",
+                suitability_index=entry.suitability_index if is_planting or month == months[0] else None,
+                planning_score=entry.suitability_index if is_planting or month == months[0] else None,
+                plant_month=entry.planting_date.month if entry.planting_date.year == year else None,
+                harvest_month=entry.harvest_date.month if entry.harvest_date.year == year else None,
+                duration_months=duration,
+                reason="Saved in your farm calendar" if is_planting or month == months[0] else None,
+                data_mode=entry.data_mode,
+                snapshot_id=str(entry.snapshot_id) if entry.snapshot_id else None,
+                saved=True,
+            ))
+
+    previous: CropCycleCandidate | None = None
+    counts: dict[str, int] = {}
+    for cycle in sorted(cycles, key=lambda item: (item.start_month, item.crop_name)):
+        counts[cycle.crop_name] = counts.get(cycle.crop_name, 0) + 1
+        season_id = f"{cycle.crop_name.lower().replace(' ', '-')}-{counts[cycle.crop_name]}"
+        _, effect = _rotation_reason(cycle, previous)
+        adjustment = {
+            "preferred": PREFERRED_ROTATION_BONUS,
+            "same-crop penalty": SAME_CROP_PENALTY,
+            "avoid": AVOID_ROTATION_PENALTY,
+            "same-family penalty": SAME_FAMILY_PENALTY,
+        }.get(effect, 0)
+        
+        # Get actual environmental context for this crop/month
+        crop_obj = next((c for c in CROP_REGISTER if c.name == cycle.crop_name), None)
+        if crop_obj:
+            context = context_for(cycle.start_month, crop_obj)
+        else:
+            # Fallback: use demonstration context
+            from app.domain.snapshot_context import context_from_demonstration
+            context = context_from_demonstration(0, 0, cycle.start_month, cycle.duration_months)
+        
+        # Generate AI explanation for planting event
+        ai_reason = await _generate_ai_explanation(
+            crop_name=cycle.crop_name,
+            context=context,
+            month=cycle.start_month,
+            suitability_index=cycle.suitability_index,
+            limiting_factor=cycle.limiting_factor,
+            previous_crop=previous.crop_name if previous else None,
+            rotation_effect=effect,
+            farm_id=farm_id,
+        )
+        
+        for offset, month in enumerate(cycle.occupied_months):
+            stage = _stage_for_month(offset, cycle.duration_months)
+            by_month[month] = TimelineItem(
+                month=month,
+                month_name=calendar.month_name[month],
+                crop_name=cycle.crop_name,
+                stage=stage,
+                action="plant" if stage == "planting" else "harvest" if stage == "harvest" else "continue",
+                season_id=season_id,
+                suitability_index=cycle.suitability_index if stage == "planting" else None,
+                planning_score=max(0, min(100, cycle.suitability_index + adjustment)) if stage == "planting" else None,
+                plant_month=cycle.start_month,
+                harvest_month=cycle.harvest_month,
+                duration_months=cycle.duration_months,
+                previous_crop=previous.crop_name if previous else None,
+                rotation_effect=effect,
+                reason=ai_reason if stage == "planting" else None,
+                limiting_factor=cycle.limiting_factor if stage == "planting" else None,
+                continues_next_year=cycle.continues_next_year,
+                data_mode=cycle.data_mode,
+                snapshot_id=cycle.snapshot_id,
+            )
+        for month in cycle.recovery_months:
+            by_month[month] = TimelineItem(
+                month=month,
+                month_name=calendar.month_name[month],
+                crop_name=None,
+                stage="recovery",
+                action="recover",
+                season_id=f"recovery-{season_id}",
+                reason="Rest the soil before the next crop",
+            )
+        previous = cycle
+
+    return [by_month[month] for month in sorted(by_month)]
 
 
 def _cycles_to_timeline(
@@ -636,7 +810,9 @@ async def get_annual_plan(
         logger.exception("Annual crop optimizer failed; using deterministic fallback.")
         optimized = deterministic_fallback(candidates)
 
-    timeline = _cycles_to_timeline(optimized.selected_cycles, year_entries, year)
+    timeline = await _cycles_to_timeline_with_ai(
+        optimized.selected_cycles, year_entries, year, str(farm.id), context_for
+    )
     timeline_by_month = {item.month: item for item in timeline}
     months = []
     for month in range(1, 13):
