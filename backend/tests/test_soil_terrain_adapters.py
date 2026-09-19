@@ -243,6 +243,21 @@ async def test_soil_retries_503_then_succeeds():
     assert client.get.await_count == 3
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 401, 403, 404, 422])
+async def test_soil_does_not_retry_permanent_http_errors(status_code: int):
+    client = MagicMock()
+    client.get = AsyncMock(return_value=_make_mock_response(status_code))
+    async_cm = MagicMock()
+    async_cm.__aenter__ = AsyncMock(return_value=client)
+    async_cm.__aexit__ = AsyncMock(return_value=False)
+    with patch("httpx.AsyncClient", return_value=async_cm), patch("asyncio.sleep", new=AsyncMock()):
+        result = await soil.fetch(0.5143, 35.2698)
+
+    assert result.evidence_status == EVIDENCE_UNAVAILABLE
+    assert client.get.await_count == 1
+
+
 # ---------------------------------------------------------------------------
 # Soil adapter — small farm flag
 # ---------------------------------------------------------------------------
