@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './globals.css';
+import './modern-hero.css';
 import { QueryProvider } from '@/components/query-provider';
 import { Toaster } from '@/components/ui/toast';
 

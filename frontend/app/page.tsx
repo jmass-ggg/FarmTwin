@@ -9,14 +9,17 @@ import {
   CloudRain,
   CloudSun,
   Database,
+  Droplet,
   FlaskConical,
   Layers3,
+  Leaf,
   MapPinned,
   Menu,
   Mountain,
   ShieldAlert,
   ShieldCheck,
   Sprout,
+  Thermometer,
   TriangleAlert,
   TrendingUp,
   X,
@@ -124,20 +127,20 @@ export default function Home() {
 
   return (
     <main className="redesigned-landing">
-      {/* Premium Sticky Navigation */}
-      <header className={`redesigned-nav ${isScrolled ? 'scrolled' : ''}`}>
-        <div className="redesigned-nav-container">
+      {/* Modern Navbar */}
+      <header className={`modern-nav ${isScrolled ? 'scrolled' : ''}`}>
+        <div className="modern-nav-container">
           <Brand />
           
-          <nav className="redesigned-nav-center" aria-label="Main navigation">
-            <a href="/">Home</a>
-            <a href="#how-it-works">How It Works</a>
-            <a href="#features">Features</a>
+          <nav className="modern-nav-center" aria-label="Main navigation">
+            <Link href="/">Home</Link>
+            <Link href="#how-it-works">How It Works</Link>
+            <Link href="#features">Features</Link>
             <Link href="/app/data-sources">About Data</Link>
           </nav>
           
-          <div className="redesigned-nav-actions">
-            <Button size="lg" render={<Link href="/app" />} className="redesigned-cta-button">
+          <div className="modern-nav-actions">
+            <Button size="lg" render={<Link href="/app" />} className="modern-nav-cta">
               Start Farm Analysis
             </Button>
             
@@ -155,82 +158,90 @@ export default function Home() {
         {mobileMenuOpen && (
           <div className="mobile-menu">
             <nav className="mobile-nav-links">
-              <a href="/" onClick={() => setMobileMenuOpen(false)}>Home</a>
-              <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>How It Works</a>
-              <a href="#features" onClick={() => setMobileMenuOpen(false)}>Features</a>
+              <Link href="/" onClick={() => setMobileMenuOpen(false)}>Home</Link>
+              <Link href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>How It Works</Link>
+              <Link href="#features" onClick={() => setMobileMenuOpen(false)}>Features</Link>
               <Link href="/app/data-sources" onClick={() => setMobileMenuOpen(false)}>About Data</Link>
             </nav>
-            <Button size="lg" render={<Link href="/app" />} className="redesigned-cta-button mobile-cta">
+            <Button size="lg" render={<Link href="/app" />} className="modern-nav-cta mobile-cta">
               Start Farm Analysis
             </Button>
           </div>
         )}
       </header>
 
-      {/* Premium Hero Section */}
-      <section className="redesigned-hero" aria-labelledby="hero-title">
-        <div className="redesigned-hero-container">
-          <div className="redesigned-hero-content">
-            <div className="redesigned-hero-badge">
-              <span>Climate-smart farm planning</span>
+      {/* Modern Hero Section */}
+      <section className="modern-hero" aria-labelledby="hero-title">
+        <div className="modern-hero-container">
+          <div className="modern-hero-left">
+            <div className="modern-hero-badge">
+              <span>Climate-Smart Agriculture</span>
             </div>
             
-            <h1 id="hero-title" className="redesigned-hero-heading">
-              Understand your farm<br />before you plant.
+            <h1 id="hero-title" className="modern-hero-heading">
+              Understand Your Farm<br />Before You Plant
             </h1>
             
-            <p className="redesigned-hero-description">
-              Draw your farm boundary, connect environmental evidence, and understand your land before making a planting decision.
+            <p className="modern-hero-description">
+              FarmTwin creates a digital representation of your farm using climate, satellite, soil, terrain, and environmental data. It helps you understand your land, test crops, plan your farming year, and prepare for climate risks.
             </p>
             
-            <div className="redesigned-hero-actions">
-              <Button size="lg" render={<Link href="/app" />} className="redesigned-primary-button">
+            <div className="modern-hero-actions">
+              <Button size="lg" render={<Link href="/app" />} className="modern-primary-button">
                 Start Farm Analysis
               </Button>
-              <Button size="lg" variant="outline" render={<Link href="/#how-it-works" />} className="redesigned-secondary-button">
-                See how it works
+              <Button size="lg" variant="outline" render={<Link href="/#how-it-works" />} className="modern-secondary-button">
+                See How It Works
               </Button>
             </div>
             
-            <p className="redesigned-trust-line">
+            <p className="modern-trust-line">
               <ShieldCheck aria-hidden="true" />
+              <span>Unknown data stays unknown. No invented farm readings.</span>
             </p>
           </div>
 
-          <div className="redesigned-hero-visual">
-            <div className="redesigned-visual-card">
-              <div className="visual-image-wrapper">
+          <div className="modern-hero-right">
+            <div className="modern-visual-card">
+              <div className="modern-image-wrapper">
                 <Image
                   src="/farmtwin-kenya-aerial.png"
                   alt="Aerial view of agricultural fields showing farm boundaries"
                   fill
                   priority
-                  sizes="(max-width: 768px) 100vw, 55vw"
-                  className="visual-image"
+                  sizes="(max-width: 768px) 100vw, 52vw"
+                  className="modern-image"
                 />
               </div>
               
-              <div className="visual-overlay" aria-hidden="true">
+              <div className="modern-boundary-overlay" aria-hidden="true">
                 <svg viewBox="0 0 520 360" preserveAspectRatio="none">
                   <polygon points="115,112 352,78 430,237 276,306 82,245" />
-                  {[
-                    ['115', '112'], ['352', '78'], ['430', '237'], ['276', '306'], ['82', '245'],
-                  ].map(([cx, cy]) => <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="6" />)}
                 </svg>
               </div>
               
-              <div className="visual-label visual-label-top">
-                <span className="label-dot"></span>
-                <span>Boundary preview</span>
+              <div className="modern-data-pill modern-pill-temp">
+                <Thermometer className="modern-pill-icon" />
+                <span>Temperature 24°C</span>
               </div>
               
-              <div className="visual-label visual-label-right">
-                <span className="label-dot"></span>
-                <span>Evidence connects here</span>
+              <div className="modern-data-pill modern-pill-veg">
+                <Leaf className="modern-pill-icon" />
+                <span>Vegetation Good</span>
               </div>
               
-              <div className="visual-caption">
-                Illustrative preview · no live readings
+              <div className="modern-data-pill modern-pill-water">
+                <Droplet className="modern-pill-icon" />
+                <span>Water Moderate</span>
+              </div>
+              
+              <div className="modern-data-pill modern-pill-drought">
+                <TriangleAlert className="modern-pill-icon" />
+                <span>Drought Risk High</span>
+              </div>
+              
+              <div className="modern-visual-caption">
+                Sample preview · not live readings
               </div>
             </div>
           </div>

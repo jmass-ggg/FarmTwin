@@ -5941,17 +5941,17 @@
 }
 
 .redesigned-cta-button {
-  min-height: 44px;
-  padding: 0 24px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #07883d 0%, #099448 100%);
-  color: white;
+  min-height: 48px;
+  padding: 0 26px;
+  border-radius: 13px;
+  background: green;
+  color: #07883d;
   font-weight: 650;
-  font-size: 0.94rem;
+  font-size: 0.96rem;
   box-shadow: 
-    0 2px 8px rgb(7 136 61 / 0.16),
-    0 1px 2px rgb(7 136 61 / 0.12),
-    inset 0 1px 0 rgb(255 255 255 / 0.1);
+    0 4px 14px rgb(0 0 0 / 0.12),
+    0 1px 3px rgb(0 0 0 / 0.08),
+    inset 0 -1px 0 rgb(0 0 0 / 0.04);
   transition: all 240ms cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
@@ -5964,18 +5964,18 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, transparent 0%, rgb(255 255 255 / 0.08) 100%);
+  background: linear-gradient(135deg, transparent 0%, rgb(7 136 61 / 0.04) 100%);
   opacity: 0;
   transition: opacity 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .redesigned-cta-button:hover {
-  background: linear-gradient(135deg, #066830 0%, #07883d 100%);
+  background: #f9fcfa;
   transform: translateY(-2px);
   box-shadow: 
-    0 6px 20px rgb(7 136 61 / 0.28),
-    0 2px 6px rgb(7 136 61 / 0.16),
-    inset 0 1px 0 rgb(255 255 255 / 0.15);
+    0 8px 28px rgb(0 0 0 / 0.16),
+    0 2px 8px rgb(0 0 0 / 0.1),
+    inset 0 -1px 0 rgb(0 0 0 / 0.04);
 }
 
 .redesigned-cta-button:hover::before {
@@ -5985,9 +5985,9 @@
 .redesigned-cta-button:active {
   transform: translateY(0);
   box-shadow: 
-    0 2px 8px rgb(7 136 61 / 0.16),
-    0 1px 2px rgb(7 136 61 / 0.12),
-    inset 0 1px 0 rgb(255 255 255 / 0.1);
+    0 2px 8px rgb(0 0 0 / 0.1),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    inset 0 -1px 0 rgb(0 0 0 / 0.04);
 }
 
 .mobile-menu-button {
