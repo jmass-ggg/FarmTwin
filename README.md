@@ -2,12 +2,13 @@
 
 **Understand your farm before you plant.**
 
-FarmTwin is a climate-smart agricultural decision-support platform that combines **real weather, satellite, soil, terrain, and climate data** to create a digital profile of a farm.
+FarmTwin is a climate-smart agricultural decision-support platform that combines **real weather, satellite, soil, terrain, and climate data** to create a digital environmental profile of a farm.
 
-It helps answer practical questions such as:
+It helps farmers answer practical questions such as:
 
-* What crop is suitable for my farm?
-* Is rainfall enough for that crop?
+* What crops are suitable for my land?
+* Is rainfall sufficient for this crop?
+* How much water might it need?
 * What climate risks should I prepare for?
 * What should I plant throughout the year?
 
@@ -15,29 +16,32 @@ It helps answer practical questions such as:
 
 ## 🌍 The Problem
 
-Farmers make important decisions about crops, planting time, water, and climate risks, but the environmental data needed for those decisions is scattered across different platforms.
+Farmers around the world make critical decisions about crops, planting periods, water, and climate risks.
 
-FarmTwin brings those data sources together and converts them into **farm-specific, explainable recommendations**.
+However, the information needed to make these decisions is often scattered across **weather services, satellite systems, soil databases, climate datasets, and terrain models**.
 
----
+FarmTwin brings these signals together and converts them into **farm-specific, explainable recommendations**.
 
-## 📊 Why This Matters
+### 📊 Why This Matters
 
-Climate shocks already create major agricultural losses in Kenya. During the **2024 floods**, the agriculture sector recorded about **KES 34.9 billion in physical damage** and **KES 84.8 billion in production losses**.
+Climate and disaster events create major agricultural losses worldwide.
 
-Farmers still have to make planting, water, and climate-risk decisions using information spread across weather services, satellite systems, soil databases, and climate datasets.
+According to the **UN Food and Agriculture Organization (FAO)**, disasters caused approximately **$3.8 trillion in crop and livestock production losses over the last 30 years — around $123 billion per year on average**.
 
-**FarmTwin was built to bring these signals together at the individual farm level and turn them into practical, explainable decisions.**
+FarmTwin was built around a simple idea:
+
+> **Environmental data already exists. The challenge is turning it into useful decisions for an individual farm.**
 
 ---
 
 ## 💡 How FarmTwin Works
 
 1. Draw or select a farm on the map.
-2. FarmTwin collects environmental data for that location.
-3. The data is combined into a **Farm Digital Twin**.
-4. FarmTwin's engines analyze crop suitability, water needs, and climate risks.
-5. The system produces crop recommendations and a 12-month planting plan.
+2. FarmTwin identifies the farm's geographic area.
+3. Environmental data is collected for that location.
+4. The data is combined into a **Farm Digital Twin**.
+5. Decision engines analyze crop suitability, water requirements, and climate risks.
+6. FarmTwin generates recommendations and an annual crop plan.
 
 ![FarmTwin System Flow](photos/workflow.png)
 
@@ -50,33 +54,33 @@ Farm Digital Twin
      ↓
 Crop + Risk + Planning Engines
      ↓
-Recommendations
+Farm Recommendations
 ```
 
 ---
 
 ## 🛰️ Real Environmental Data
 
-FarmTwin integrates multiple environmental providers:
+FarmTwin combines multiple environmental data providers:
 
 | Data      | Source         | Used For                                        |
 | --------- | -------------- | ----------------------------------------------- |
-| Weather   | Open-Meteo     | Temperature, rainfall, wind and forecast        |
+| Weather   | Open-Meteo     | Temperature, rainfall, wind and forecasts       |
 | Satellite | Sentinel-2     | NDVI vegetation health and NDMI moisture        |
 | Soil      | SoilGrids      | pH, texture, organic carbon and soil properties |
 | Terrain   | Copernicus DEM | Elevation and slope                             |
 | Climate   | ERA5-Land      | Historical climate patterns and anomalies       |
-| Station   | Conduit IoT    | Local sensor data when available                |
+| Station   | Conduit IoT    | Local sensor measurements when available        |
 
-Each observation keeps its **source, timestamp, resolution, and quality status**.
+Each observation keeps its **source, timestamp, spatial resolution, availability, and quality status**.
 
-Missing environmental data is not fabricated.
+Missing environmental data is not silently fabricated.
 
 ---
 
 ## 🧬 Farm Digital Twin
 
-FarmTwin combines the available environmental information into one farm-specific profile.
+FarmTwin combines the environmental information for a farm into one unified profile.
 
 ```text
 Weather + Satellite + Soil + Terrain + Climate + Sensors
@@ -84,7 +88,7 @@ Weather + Satellite + Soil + Terrain + Climate + Sensors
                   Farm Digital Twin
 ```
 
-This digital twin becomes the input for FarmTwin's decision engines.
+This Digital Twin becomes the input for FarmTwin's decision engines.
 
 ---
 
@@ -113,21 +117,22 @@ Rainfall        ⚠ Below optimal
 Main limitation: Water availability
 ```
 
-The calculations are **rule-based and transparent**, so users can understand why a crop received its score.
+The scoring system is **rule-based and transparent**, allowing users to understand why a crop received its score.
 
 ---
 
-## ⚠️ Climate Risk & Water Analysis
+## 💧 Climate Risk & Water Analysis
 
-FarmTwin analyzes risks including:
+FarmTwin analyzes agricultural risks such as:
 
 * Drought
 * Heat stress
-* Heavy rainfall / flooding
+* Heavy rainfall
+* Flood / waterlogging conditions
 * Wind exposure
 * Seasonal rainfall anomalies
 
-It also compares expected rainfall with crop water requirements.
+It also compares expected rainfall against crop water requirements.
 
 ```text
 Crop water requirement: 420 mm
@@ -135,13 +140,13 @@ Expected rainfall:       310 mm
 Estimated deficit:       110 mm
 ```
 
-This helps farmers understand possible irrigation and climate risks before planting.
+This helps identify potential water shortages and climate risks before planting.
 
 ---
 
 ## 📅 Annual Crop Planner
 
-FarmTwin uses:
+FarmTwin combines:
 
 **Crop suitability + planting seasons + rainfall + growing duration + crop rotation**
 
@@ -149,29 +154,31 @@ to generate a practical **12-month crop plan**.
 
 ```text
 Mar – Jun   → Maize
-Jul – Sep   → Kale
+Jul – Sep   → Vegetables
 Oct – Dec   → Beans
 ```
+
+The plan adapts to the environmental conditions of the selected farm rather than assuming one fixed agricultural calendar for every location.
 
 ---
 
 ## 🤖 AI Explanations
 
-AI is used only to explain calculated results in simple language.
+AI is used to explain calculated results in simple language.
 
-It **does not calculate crop scores or climate risks**.
+It **does not calculate crop suitability scores or climate-risk values**.
 
 ```text
 Environmental Data
         ↓
-Rule-Based Calculation
+Rule-Based Engines
         ↓
-Result
+Calculated Results
         ↓
 AI Explanation
 ```
 
-This keeps FarmTwin's recommendations explainable and auditable.
+This keeps the core decision process transparent and auditable.
 
 ---
 
@@ -245,22 +252,22 @@ docker compose down
 
 ## ⚠️ Accuracy & Limitations
 
-FarmTwin is a **decision-support tool**, not a replacement for laboratory soil tests or professional agronomic advice.
+FarmTwin is a **decision-support system**, not a replacement for laboratory soil testing, field measurements, or professional agronomic advice.
 
-Environmental datasets have different spatial resolutions and uncertainties. SoilGrids contains modeled soil estimates, weather forecasts can change, and satellite observations may be affected by cloud cover.
+Environmental datasets have different spatial resolutions and uncertainty. SoilGrids provides modeled soil properties, forecasts can change, and satellite observations can be affected by cloud cover and acquisition timing.
 
-FarmTwin reports available data and its quality rather than presenting uncertain or missing measurements as fact.
+FarmTwin reports data provenance and availability so uncertain or missing information is not presented as confirmed farm measurements.
 
 ---
 
 ## 🎯 Goal
 
-FarmTwin turns complex environmental data into answers farmers can actually use:
+FarmTwin's goal is to make environmental intelligence useful at the **individual farm level — anywhere supported environmental data is available**.
 
-> **What should I grow, when should I grow it, how much water might it need, and what climate risks should I prepare for?**
+> **What should I grow? When should I grow it? How much water might it need? And what environmental risks should I prepare for?**
 
 ---
 
 **FarmTwin — Understand your farm before you plant.**
 
-*Better decisions. Healthier farms. Greener Kenya.*
+*Better data. Better decisions. More resilient farms.*
