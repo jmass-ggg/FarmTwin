@@ -1,151 +1,153 @@
 # FarmTwin
 
-**Climate-Smart Farm Planning & Decision Support Platform**
+FarmTwin helps farmers understand their land using real environmental data and provides evidence-based crop, climate, water, and risk recommendations.
 
-FarmTwin is an agricultural decision support system that helps farmers and agricultural advisors make informed crop planning decisions based on real environmental evidence. By creating a "digital twin" of a farm that combines terrain, soil, climate, weather, and satellite data, FarmTwin provides evidence-based recommendations while maintaining complete transparency about data sources, quality, and uncertainty.
+## The Problem
+
+Farmers need to make critical decisions about what crops to plant, when to plant them, water requirements, and climate risks. However, useful environmental information is scattered across different systems and providers. FarmTwin brings that data together into one digital profile specific to each farm.
 
 ## What FarmTwin Does
 
-FarmTwin helps farmers answer critical questions:
-- **What crops are suitable** for my specific farm location and soil conditions?
-- **When should I plant** based on rainfall patterns and climate forecasts?
-- **What risks** does my farm face from drought, floods, or extreme weather?
-- **How will climate change** affect my planting windows and crop choices?
+Select your farm on a map and FarmTwin gathers environmental data from multiple sources:
 
-### Core Capabilities
+- **Weather**: Current conditions and 7-day forecasts
+- **Satellite**: Vegetation health (NDVI) and moisture proxy (NDMI) from Sentinel-2
+- **Soil**: pH, texture, organic carbon, and other properties
+- **Terrain**: Elevation, slope, and topography
+- **Climate**: Long-term patterns, seasonal trends, and anomalies
 
-#### 🗺️ Farm Digital Twin
-Create a comprehensive environmental profile of your farm by connecting multiple data sources:
-- **Terrain**: Elevation, slope, and topography from digital elevation models
-- **Soil**: Composition, pH, organic carbon from global soil databases
-- **Weather**: Real-time conditions and 7-day forecasts from Open-Meteo
-- **Climate**: Long-term patterns, anomalies, and seasonal trends
-- **Satellite**: NDVI vegetation index and land cover analysis
-- **Local Stations**: High-resolution weather data from nearby ground stations (Conduit)
+This data is combined into a **Farm Digital Twin** - a complete environmental profile of your specific farm.
 
-Every data point includes full provenance: source, timestamp, quality rating, and geographic relevance.
+FarmTwin then provides:
 
-#### 🌱 Crop Simulator
-Compare crop suitability using transparent, rule-based logic:
-- Evaluate crops against rainfall, temperature, soil, and terrain requirements
-- See exactly why each crop is rated suitable, marginal, or unsuitable
-- Understand which environmental factors drive each recommendation
-- No "black box" algorithms—every decision is explained
+- **Crop suitability scores** - Which crops match your farm conditions
+- **Best crop recommendations** - Data-driven planting suggestions
+- **Annual crop planning** - 12-month planting calendar with rotation
+- **Water requirements** - Rainfall needs and irrigation guidance
+- **Risk alerts** - Drought, flood, heat, and other hazard assessments
 
-#### 📅 Annual Crop Plan
-Transform crop recommendations into a practical 12-month planting calendar:
-- Visualize planting windows aligned with rainfall seasons
-- Plan crop rotations and sequential plantings
-- Adjust plans based on changing conditions
-- Track implementation progress throughout the year
+## How FarmTwin Works
 
-#### ⚠️ Disaster Center
-Understand and prepare for agricultural hazards:
-- Drought, flood, heat stress, and heavy rainfall risks
-- Explained risk drivers based on climate and weather data
-- Practical mitigation actions specific to each hazard
-- Unknown risks stay unknown—no false confidence from missing data
+![FarmTwin System Flow](photos/workflow.png)
 
-#### 🌦️ Climate Overview
-Access comprehensive climate intelligence in one dashboard:
-- Current weather conditions with live updates
-- 7-day weather forecasts for planning field activities
-- Monthly and seasonal climate patterns
-- Annual climate trends and growing period recommendations
+The FarmTwin process follows these steps:
 
-## How It Works
+```
+1. Select Farm (draw boundary on map)
+          ↓
+2. Collect Environmental Data (from 6 data sources)
+          ↓
+3. Build Farm Digital Twin (unified environmental profile)
+          ↓
+4. Analyze Farm (crop engine + risk engine + planner)
+          ↓
+5. Recommendations (suitability scores, risks, and annual plan)
+```
 
-### 1. Define Your Farm
-Draw your farm boundary on an interactive map. FarmTwin validates the geometry and calculates the area.
+## Data Sources
 
-### 2. Gather Evidence
-FarmTwin automatically fetches environmental data from multiple sources:
-- Global terrain models (SRTM, ASTER)
-- Soil databases (SoilGrids, iSDA Africa)
-- Weather APIs (Open-Meteo)
-- Satellite imagery (Sentinel-2 via Microsoft Planetary Computer)
-- Climate baselines (CHIRPS, ERA5)
+FarmTwin integrates data from multiple environmental providers:
 
-### 3. Build the Digital Twin
-All evidence is combined into a versioned "snapshot"—a point-in-time environmental profile of your farm with complete metadata about data quality, source, and acquisition time.
+| Data | Source | Purpose |
+|------|--------|---------|
+| **Weather** | Open-Meteo | Current conditions and 7-day forecast |
+| **Satellite** | Copernicus Sentinel-2 (L2A) | NDVI vegetation health and NDMI moisture proxy |
+| **Soil** | SoilGrids v2.0 (ISRIC) | pH, texture, bulk density, organic carbon |
+| **Terrain** | Copernicus DEM GLO-30 | Elevation, slope, and topography |
+| **Climate** | Open-Meteo ERA5-Land | 30-year baselines and anomalies |
+| **Station** | Conduit IoT sensors | High-resolution local weather (when configured) |
 
-### 4. Make Decisions
-Use the twin to:
-- Simulate crop suitability
-- Plan planting calendars
-- Assess climate risks
-- Explore "what-if" scenarios
+All data includes complete provenance: source, timestamp, quality rating, and spatial resolution.
 
-## Key Principles
+## Farm Digital Twin
 
-### 🔍 Transparency First
-- Every result shows its data source and quality
-- Unknown data stays unknown—no synthetic values
-- Data modes clearly separated: Live, Historical Replay, or Demonstration
+FarmTwin creates a digital environmental profile by combining all data sources:
 
-### 📊 Evidence-Based
-- Decisions grounded in real environmental data
-- Explicit uncertainty when data is missing or low-quality
-- Full provenance chain from satellite/sensor to recommendation
+```
+Weather + Satellite + Soil + Terrain + Climate + Station
+                      ↓
+           Farm Digital Twin
+```
 
-### 🌍 Climate-Aware
-- Climate change impacts built into crop requirements
-- Seasonal forecasts inform planting windows
-- Historical climate baselines show long-term trends
+This creates one unified environmental snapshot for your farm. Every data point includes its source, acquisition time, and quality rating. Missing or low-quality data is never fabricated - it stays explicitly unavailable.
 
-### 🚫 No Black Boxes
-- Crop suitability rules are transparent and explainable
-- Risk assessments show their logic
-- Users understand *why* recommendations are made
+## Core Engines
+
+### Crop Engine
+
+Scores crop suitability based on your farm's actual conditions against each crop's requirements. The scoring logic is completely transparent - you can see exactly why each crop received its rating.
+
+**Key features:**
+- Rainfall matching (seasonal patterns)
+- Temperature requirements (min/max/optimal)
+- Soil compatibility (pH, texture, drainage)
+- Terrain suitability (elevation, slope)
+- Transparent scoring - no "black box" algorithms
+
+### Risk Engine
+
+Analyzes climate and weather hazards affecting your farm:
+
+- **Drought exposure** - rainfall deficits and water stress
+- **Heat stress** - extreme temperature events
+- **Heavy rainfall** - flooding and waterlogging risks
+- **Wind damage** - high wind exposure
+- **Seasonal patterns** - climate trend analysis
+
+Each risk assessment shows the data and logic behind the calculation.
+
+### Annual Planner
+
+Creates a practical 12-month crop calendar based on:
+
+- Crop suitability scores from the Crop Engine
+- Rainfall seasons and planting windows
+- Crop rotation compatibility
+- Growing period requirements
+
+The planner generates month-by-month recommendations with specific crops and activities.
+
+### AI Explanations
+
+The system uses AI to generate natural language explanations of calculated results. AI does **not** calculate crop scores or risk assessments - those come from deterministic rule-based engines. AI only helps communicate the results in plain language.
 
 ## Technology Stack
 
 ### Frontend
-- **Framework**: Next.js 14 (React, TypeScript)
+- **Framework**: Next.js 14 (Vinext beta)
+- **Language**: TypeScript + React 19
 - **Styling**: Tailwind CSS
-- **Maps**: MapLibre GL JS + Mapbox
-- **UI Components**: Radix UI, Lucide icons
+- **Maps**: MapLibre GL JS
+- **UI**: Radix UI components
 
 ### Backend
-- **API**: Python 3.12 + FastAPI
+- **API**: FastAPI (Python 3.12)
 - **Database**: PostgreSQL 16 + PostGIS 3.4
+- **Queue**: Redis 7
+- **Worker**: Background job processor
 - **Validation**: Pydantic v2
-- **Testing**: Pytest
 
-### Data Sources
+### Infrastructure
+- **Containers**: Docker + Docker Compose
+- **Spatial**: PostGIS for geometry operations
+- **Testing**: Pytest + Hypothesis (property-based testing)
+
+### Data Providers
 - **Weather**: Open-Meteo API
-- **Soil**: SoilGrids250m, iSDA Africa
-- **Terrain**: SRTM, ASTER GDEM
-- **Satellite**: Sentinel-2 (Microsoft Planetary Computer)
-- **Climate**: CHIRPS rainfall, ERA5 reanalysis
+- **Climate**: ERA5-Land reanalysis via Open-Meteo
+- **Satellite**: Sentinel-2 via Copernicus Data Space Ecosystem
+- **Soil**: SoilGrids250m (ISRIC)
+- **Terrain**: Copernicus DEM GLO-30 (AWS Open Data)
+- **Station**: Conduit IoT sensors (optional)
 
-## Project Status
-
-FarmTwin is under active development. Current implementation includes:
-
-✅ **Completed**:
-- Farm creation and boundary management
-- Environmental data integration (weather, soil, terrain, satellite)
-- Farm Digital Twin with evidence provenance
-- Crop Simulator with 20+ supported crops
-- Annual Crop Planner
-- Climate Overview dashboard
-- Disaster Center with risk assessment
-
-🚧 **In Progress**:
-- Climate UI redesign
-- Enhanced forecast visualization
-- Growing period recommendations
-- Offline capability
-
-## Getting Started
+## Quick Start with Docker
 
 ### Prerequisites
-- Docker and Docker Compose
-- Node.js 20+ and npm (for frontend development)
-- Python 3.12+ (for backend development)
+- Docker and Docker Compose installed
+- 8GB RAM minimum
+- Internet connection for data sources
 
-### Quick Start
+### Setup
 
 1. **Clone the repository**
    ```bash
@@ -153,31 +155,75 @@ FarmTwin is under active development. Current implementation includes:
    cd farmtwin
    ```
 
-2. **Start the services**
+2. **Configure environment** (optional)
    ```bash
-   docker-compose up -d
+   cp backend/.env.example backend/.env
+   # Edit backend/.env if you want to add Copernicus credentials for satellite data
    ```
 
-3. **Access the application**
-   - Frontend: http://localhost:3000
-   - API docs: http://localhost:8000/docs
+3. **Build and start services**
+   ```bash
+   docker compose build
+   docker compose up -d
+   ```
 
-### Development Setup
+4. **Wait for startup** (30-60 seconds)
+   ```bash
+   docker compose ps
+   ```
 
-See detailed setup instructions in:
-- [Frontend README](./frontend/README.md)
-- [Backend README](./backend/README.md)
+5. **Access the application**
+   - **Frontend**: http://localhost:3000
+   - **Backend API**: http://localhost:8000
+   - **API Docs**: http://localhost:8000/docs
+
+### Stopping Services
+
+```bash
+docker compose down
+```
+
+To remove all data:
+```bash
+docker compose down -v
+```
+
+## Project Status
+
+FarmTwin is under active development for agricultural decision support in Kenya.
+
+**Completed:**
+- Farm creation and boundary management
+- Farm Digital Twin with 6 data sources
+- Crop Simulator (20+ supported crops)
+- Annual Crop Planner with rotation
+- Risk/Disaster Center
+- Climate Overview dashboard
+
+**In Progress:**
+- Enhanced forecast visualization
+- Growing period recommendations
+- Offline capability
+
+## Data Accuracy
+
+FarmTwin provides decision support based on available environmental data. Important notes:
+
+- **Data resolution**: Each provider has different spatial resolution (250m for soil, 30m for terrain, etc.)
+- **Modeled estimates**: Soil properties are modeled, not direct measurements
+- **Crop scores**: Calculated using rule-based logic comparing farm conditions to crop requirements
+- **Risk assessments**: Based on climate and weather data analysis
+- **Recommendations, not guarantees**: Results are decision support tools to inform planning
+
+External data providers (Open-Meteo, SoilGrids, Copernicus) have their own accuracy specifications and limitations. FarmTwin transparently reports data quality and uncertainty.
 
 ## Documentation
 
-- **[API Contract](./docs/api-contract.md)**: Complete API specification
-- **[Data Sources](./docs/data-sources.md)**: Environmental data providers
-- **[Architecture](./docs/architecture-decisions.md)**: Design decisions
-- **[Deployment](./docs/deployment.md)**: Security and infrastructure
-
-## Contributing
-
-This is currently a private development project. For questions or collaboration opportunities, please contact the project maintainer.
+- **Backend Setup**: `backend/README.md`
+- **Frontend Setup**: `frontend/README.md`
+- **API Contract**: `docs/api-contract.md`
+- **Data Sources**: `docs/data-sources.md`
+- **Architecture**: `docs/architecture-decisions.md`
 
 ## License
 
@@ -186,3 +232,5 @@ Proprietary - All rights reserved
 ---
 
 **FarmTwin** • Understand your farm before you plant.
+
+*Better decisions. Healthier farms. Greener Kenya.*
