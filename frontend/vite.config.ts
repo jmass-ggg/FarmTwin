@@ -12,6 +12,23 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 
+const farmTwinGlobalCss = {
+  name: 'farmtwin:global-css',
+  transform(code: string, id: string) {
+    if (!id.includes('virtual:vinext-app-browser-entry')) return null;
+
+    return {
+      code: [
+        "import 'maplibre-gl/dist/maplibre-gl.css';",
+        "import '/app/globals.css';",
+        "import '/app/modern-hero.css';",
+        code,
+      ].join('\n'),
+      map: null,
+    };
+  },
+};
+
 const localBindingConfig = {
   main: 'vinext/server/fetch-handler',
   compatibility_flags: ['nodejs_compat'],
@@ -51,6 +68,7 @@ export default defineConfig(async () => {
       : undefined,
     plugins: [
       vinext(),
+      farmTwinGlobalCss,
       sites(),
       cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },

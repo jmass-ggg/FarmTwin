@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --ignore-scripts
+    npm ci --include=dev
 
 FROM node:22-alpine AS builder
 
@@ -24,7 +24,7 @@ COPY lib ./lib
 COPY public ./public
 COPY photos ./photos
 COPY .openai ./.openai
-COPY next.config.ts tsconfig.json vite.config.ts ./
+COPY next.config.ts tsconfig.json vite.config.ts postcss.config.mjs ./
 COPY next-env.d.ts components.json ./
 
 ARG NEXT_PUBLIC_FARMTWIN_API_URL
