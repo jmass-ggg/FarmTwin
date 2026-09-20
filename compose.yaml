@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: farmtwin_admin
       POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-admin_dev_password}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-55432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-roles.sql
@@ -70,32 +70,73 @@ services:
       - redis_data:/data
     container_name: farmtwin-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-56379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
 
+  # Apply schema migrations with the database owner before application startup.
+  migrate:
+    image: farmtwin-backend:latest
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE__HOST: db
+      DATABASE__PORT: 5432
+      DATABASE__NAME: farmtwin_demo
+      DATABASE__USER: farmtwin_admin
+      DATABASE__PASSWORD: ${DB_ADMIN_PASSWORD:-admin_dev_password}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m app.db.management upgrade
+    restart: "no"
+
+  # Initialize the isolated local-demo identity and fixtures idempotently.
+  demo-setup:
+    image: farmtwin-backend:latest
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE__HOST: db
+      DATABASE__PORT: 5432
+      DATABASE__NAME: farmtwin_demo
+      DATABASE__USER: farmtwin_admin
+      DATABASE__PASSWORD: ${DB_ADMIN_PASSWORD:-admin_dev_password}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: python -m app.db.demo_setup
+    restart: "no"
+
   # Backend API
   api:
+    image: farmtwin-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: farmtwin-api
     env_file:
       - ./backend/.env
+    environment:
+      DATABASE__HOST: db
+      DATABASE__PORT: 5432
+      DATABASE__NAME: farmtwin_demo
+      DATABASE__USER: farmtwin_runtime
+      DATABASE__PASSWORD: ${DB_RUNTIME_PASSWORD:-runtime_dev_password}
+      REDIS_URL: redis://redis:6379
+      CORS__ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000"]'
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
-      db:
-        condition: service_healthy
+      demo-setup:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
-    volumes:
-      - ./backend/app:/app/app:ro
-      - ./backend/alembic.ini:/app/alembic.ini:ro
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-proxy-headers --timeout-graceful-shutdown 20
     stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -105,20 +146,42 @@ services:
 
   # Analysis job worker — processes environmental data jobs from Redis
   farmtwin-worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: farmtwin-backend:latest
     container_name: farmtwin-worker
     env_file:
       - ./backend/.env
+    environment:
+      DATABASE__HOST: db
+      DATABASE__PORT: 5432
+      DATABASE__NAME: farmtwin_demo
+      DATABASE__USER: farmtwin_runtime
+      DATABASE__PASSWORD: ${DB_RUNTIME_PASSWORD:-runtime_dev_password}
+      REDIS_URL: redis://redis:6379
     depends_on:
-      db:
-        condition: service_healthy
+      demo-setup:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
-    volumes:
-      - ./backend/app:/app/app:ro
     command: python -m app.worker
+
+  frontend:
+    image: farmtwin-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_FARMTWIN_API_URL: http://localhost:${API_PORT:-8000}
+    container_name: farmtwin-frontend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   redis_data:
