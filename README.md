@@ -21,6 +21,15 @@ FarmTwin brings those data sources together and converts them into **farm-specif
 
 ---
 
+## 📊 Why This Matters
+
+Climate shocks already create major agricultural losses in Kenya. During the **2024 floods**, the agriculture sector recorded about **KES 34.9 billion in physical damage** and **KES 84.8 billion in production losses**.
+
+Farmers still have to make planting, water, and climate-risk decisions using information spread across weather services, satellite systems, soil databases, and climate datasets.
+
+**FarmTwin was built to bring these signals together at the individual farm level and turn them into practical, explainable decisions.**
+
+
 ## 💡 How FarmTwin Works
 
 1. Draw or select a farm on the map.
