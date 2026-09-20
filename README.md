@@ -29,6 +29,7 @@ Farmers still have to make planting, water, and climate-risk decisions using inf
 
 **FarmTwin was built to bring these signals together at the individual farm level and turn them into practical, explainable decisions.**
 
+---
 
 ## 💡 How FarmTwin Works
 
